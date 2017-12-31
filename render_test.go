@@ -1,6 +1,9 @@
 package quill
 
-import "fmt"
+import (
+	"fmt"
+	"testing"
+)
 
 func Example() {
 	ops := []byte(`[
@@ -34,4 +37,7 @@ func Example() {
 	]`)
 	fmt.Println(Render(ops))
 	// Output: <h1>Heading1</h1><p>Hello, this is text.</p><p>And <em>here is italic </em>(and not).</p><p>And <strong>here is bold</strong>
+}
+
+func TestRawOpToOp(t *testing.T) {
 }
