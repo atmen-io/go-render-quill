@@ -10,7 +10,7 @@ import (
 
 // Render takes the Delta array of insert operations and, optionally, a map of custom Op rendering functions that may
 // customizing how operations of certain types are rendered. The returned byte slice is the rendered HTML.
-func Render(ops []byte, customHandlers map[string]OpHandler) ([]byte, error) {
+func Render(ops []byte, th map[string]TypeHandler, ah map[string]AttrHandler) ([]byte, error) {
 
 	var ro []map[string]interface{}
 	err := json.Unmarshal(ops, &ro)
@@ -18,22 +18,19 @@ func Render(ops []byte, customHandlers map[string]OpHandler) ([]byte, error) {
 		return nil, err
 	}
 
-	var (
-		html      = new(bytes.Buffer)
-		prev, cur *Op
-	)
+	var html = new(bytes.Buffer)
+	var o *Op
 
 	for i := range ro {
-		cur, err = rawOpToOp(ro[i])
+		o, err = rawOpToOp(ro[i])
 		if err != nil {
 			return nil, err
 		}
-		if _, ok := customHandlers[cur.Type]; ok {
-			customHandlers[cur.Type](prev, cur, html)
+		if _, ok := th[o.Type]; ok {
+			th[o.Type](o, html)
 		} else {
-			handlers[cur.Type](prev, cur, html)
+			opHandlers[o.Type](o, html)
 		}
-		prev = cur
 	}
 
 	return html.Bytes(), nil
@@ -54,10 +51,18 @@ func (o *Op) HasAttr(attr string) bool {
 // ClosePrev checks if the previous Op opened any attribute tags that are not supposed to be set on the current Op and closes
 // those tags in the opposite order in which they were opened.
 func (o *Op) ClosePrevAttrs(buf *bytes.Buffer) {
+	for i := len(attrStates); i > 0; i-- {
+		indx := i - 1
+		if !o.HasAttr(attrStates[indx]) {
+		}
+	}
 }
 
 func (o *Op) OpenAttrs(buf *bytes.Buffer) {
 }
+
+// attrStates lists the tags currently open in the order in which they were opened.
+var attrStates = make([]string, 0, 2)
 
 // rawOpToOp takes a raw Delta op as extracted from the JSON and turns it into an Op to make it usable for rendering.
 func rawOpToOp(ro map[string]interface{}) (*Op, error) {
@@ -93,16 +98,24 @@ func rawOpToOp(ro map[string]interface{}) (*Op, error) {
 // current Op to buf. Each handler should check the previous Op to see if it has attributes that are not set on the current
 // Op and close the appropriate HTML tags before writing the current Op; also the handler should not needlessly open up a
 // tag for an attribute if it was already opened for the previous Op. This ensures that the rendered HTML is lean.
-type OpHandler func(prev *Op, cur *Op, buf *bytes.Buffer)
+//type OpHandler func(o *Op, buf *bytes.Buffer)
 
-var handlers = map[string]OpHandler{
-	"string": func(prev *Op, cur *Op, buf *bytes.Buffer) {
-		return
+type OpHandler struct {
+	Open, Write, Close func(o *Op, buf *bytes.Buffer)
+}
+
+var Text = OpHandler{
+	Open: func(o *Op, buf *bytes.Buffer) {
+	},
+	Write: func(o *Op, buf *bytes.Buffer) {
+	},
+	Close: func(o *Op, buf *bytes.Buffer) {
 	},
 }
 
-// attrStates lists the tags currently open in the order in which they were opened.
-var attrStates = make([]string, 0, 2)
+var opHandlers = map[string]OpHandler{
+	"text": Text,
+}
 
 func extractString(v interface{}) string {
 	switch val := v.(type) {
@@ -112,8 +125,6 @@ func extractString(v interface{}) string {
 		if val == true {
 			return "y"
 		}
-		return ""
-	default:
-		return ""
 	}
+	return ""
 }

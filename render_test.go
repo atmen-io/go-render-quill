@@ -47,10 +47,10 @@ func TestRawOpToOp(t *testing.T) {
 	ro := map[string]interface{}{
 		"insert": "string to insert.\n",
 		"attributes": map[string]interface{}{
-			"bold":       true,
-			"link":       "https://widerwebs.com",
-			"italic":     false,
-			"underlined": nil, // nil value is set if JSON value is null
+			"bold":      true,
+			"link":      "https://widerwebs.com",
+			"italic":    false,
+			"underline": nil, // nil value is set if JSON value is null
 		},
 	}
 
@@ -58,10 +58,10 @@ func TestRawOpToOp(t *testing.T) {
 		Data: "string to insert.\n",
 		Type: "string",
 		Attrs: map[string]string{
-			"bold":       "y",
-			"italic":     "",
-			"link":       "https://widerwebs.com",
-			"underlined": "",
+			"bold":      "y",
+			"italic":    "",
+			"link":      "https://widerwebs.com",
+			"underline": "",
 		},
 	}
 
@@ -117,4 +117,19 @@ func testPair(opsFile, htmlFile string) error {
 		return fmt.Errorf("bad rendering; wanted: \n%s\n got: \n%s\n", desired, got)
 	}
 	return nil
+}
+
+func TestOp_ClosePrevAttrs(t *testing.T) {
+	attrStates = []string{"italic", "bold"}
+	o := &Op{
+		Data: "stuff",
+		// no attributes set
+	}
+	desired := "</b></em>"
+	buf := new(bytes.Buffer)
+	o.ClosePrevAttrs(buf)
+	got := buf.String()
+	if got != desired {
+		t.Errorf("closed attributes wrong; wanted %q; got %q\n", desired, got)
+	}
 }
