@@ -1,5 +1,5 @@
-// Package `quill` takes a Quill-based Delta (https://github.com/quilljs/delta) as a JSON array of `insert` operations and
-// renders the defined HTML document.
+// Package `quill` takes a Quill-based Delta (https://github.com/quilljs/delta) as a JSON array of `insert` operations
+// and renders the defined HTML document.
 package quill
 
 import (
@@ -8,6 +8,8 @@ import (
 	"fmt"
 )
 
+// Render takes the Delta array of insert operations and, optionally, a map of custom Op rendering functions that may
+// customizing how operations of certain types are rendered. The returned byte slice is the rendered HTML.
 func Render(ops []byte, customHandlers map[string]OpHandler) ([]byte, error) {
 
 	var ro []rawOp
@@ -39,9 +41,9 @@ func Render(ops []byte, customHandlers map[string]OpHandler) ([]byte, error) {
 }
 
 type Op struct {
-	Data  string            // the string to insert or the value of the single item in the embed object
-	Type  string            // the type of op (typically "string", but user can register any other type)
-	Attrs map[string]string // key is attribute name; value is either value string or "y" (indicating true)
+	Data  string            // the text to insert or the value of the embed object (http://quilljs.com/docs/delta/#embeds)
+	Type  string            // the type of the op (typically "string", but you can register any other type)
+	Attrs map[string]string // key is attribute name; value is either value string or "y" (meaning true) or "n" (meaning false)
 }
 
 type rawOp map[string]interface{}
@@ -86,10 +88,21 @@ func extractString(v interface{}) string {
 	}
 }
 
-type OpHandler func(prev, cur *Op, buf *bytes.Buffer)
+// An OpHandler takes the previous Op (which is nil if the current Op is the first) and the current Op and writes
+// the current Op to buf. The handler may need to know the previous Op to decide whether to begin writing the current
+// Op data only after closing the HTML tag that set attributes on the previous Op; all attributes of the previous Op
+// should be checked before writing the current one.
+type OpHandler func(prev *Op, cur *Op, buf *bytes.Buffer)
 
 var handlers = map[string]OpHandler{
-	"string": func(prev, cur *Op, buf *bytes.Buffer) {
+	"string": func(prev *Op, cur *Op, buf *bytes.Buffer) {
 		return
 	},
+}
+
+func prevHas(o *Op, attr string) bool {
+	if o == nil {
+		return false
+	}
+	return o.Attrs[attr] == "y"
 }
