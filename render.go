@@ -5,9 +5,10 @@ package quill
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 )
 
-func Render(ops []byte) ([]byte, error) {
+func Render(ops []byte, customHandlers map[string]OpHandler) ([]byte, error) {
 
 	var ro []rawOp
 	err := json.Unmarshal(ops, &ro)
@@ -15,19 +16,22 @@ func Render(ops []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	html := new(bytes.Buffer)
+	var (
+		html      = new(bytes.Buffer)
+		prev, cur *Op
+	)
 
-	oo := make([]*Op, 0, len(ro))
 	for i := range ro {
-		oo[i], err = rawOpToOp(ro[i])
+		cur, err = rawOpToOp(ro[i])
 		if err != nil {
 			return nil, err
 		}
-		var prev *Op
-		if i > 0 {
-			prev = oo[i-1]
+		if _, ok := customHandlers[cur.Type]; ok {
+			customHandlers[cur.Type](prev, cur, html)
+		} else {
+			handlers[cur.Type](prev, cur, html)
 		}
-		handlers[oo[i].Type](prev, oo[i], html)
+		prev = cur
 	}
 
 	return html.Bytes(), nil
@@ -35,39 +39,51 @@ func Render(ops []byte) ([]byte, error) {
 }
 
 type Op struct {
-	Data string            // the string to insert or the value of the single item in the embed object
-	Type   string            // the type of op (typically "string", but user can register any other type)
-	Attrs  map[string]string // key is attribute name; value is either value string or "y" (indicating true)
+	Data  string            // the string to insert or the value of the single item in the embed object
+	Type  string            // the type of op (typically "string", but user can register any other type)
+	Attrs map[string]string // key is attribute name; value is either value string or "y" (indicating true)
 }
 
 type rawOp map[string]interface{}
 
 func rawOpToOp(ro rawOp) (*Op, error) {
-	o := &Op{}
-	for k := range ro {
-		switch k {
-		case "insert":
-			if str, ok := ro[k].(string); ok {
-				// This op is a simple string insert.
-				o.Type = "string"
-				o.Data = str
-			} else if mapStrIntf, ok := ro[k].(map[string]interface{}); ok {
-
+	if _, ok := ro["insert"]; !ok {
+		return nil, fmt.Errorf("op %q lacks an insert", ro)
+	}
+	o := new(Op)
+	if str, ok := ro["insert"].(string); ok {
+		// This op is a simple string insert.
+		o.Type = "string"
+		o.Data = str
+	} else if mapStrIntf, ok := ro["insert"].(map[string]interface{}); ok {
+		for mk := range mapStrIntf {
+			ins := make(map[string]string)
+			ins[mk] = extractString(mapStrIntf[mk])
+		}
+	}
+	if _, ok := ro["attributes"]; ok {
+		o.Attrs = make(map[string]string)
+		if attrs, ok := ro["attributes"].(map[string]interface{}); ok {
+			for attr := range attrs {
+				o.Attrs[attr] = extractString(attrs[attr])
 			}
-			//switch ro[k].(type) {
-			//case string:
-			//	// This op is a simple string insert.
-			//	o.Insert = ro[k].(string)
-			//}
-		case "attributes":
-			switch ro[k].(type)
 		}
 	}
 	return o, nil
 }
 
-func extractString(intf interface{}) string {
-
+func extractString(v interface{}) string {
+	switch val := v.(type) {
+	case string:
+		return val
+	case bool:
+		if val == true {
+			return "y"
+		}
+		return "n"
+	default:
+		return ""
+	}
 }
 
 type OpHandler func(prev, cur *Op, buf *bytes.Buffer)
