@@ -9,7 +9,16 @@
 		"insert": "\n"
 	},
 	{
-		"insert": "Hello, this is text.\nAnd "
+		"insert": "Some plain text.\nHeading2"
+	},
+	{
+		"attributes": {
+			"header": 2
+		},
+		"insert": "\n"
+	},
+	{
+		"insert": "And "
 	},
 	{
 		"attributes": {
@@ -27,42 +36,28 @@
 		"insert": "here is bold"
 	},
 	{
-		"insert": " text.\nBlock quote"
-	},
-	{
-		"attributes": {
-			"blockquote": true
-		},
-		"insert": "\n"
-	},
-	{
-		"insert": "Heading2"
-	},
-	{
-		"attributes": {
-			"header": 2
-		},
-		"insert": "\n"
-	},
-	{
-		"insert": "More text...\n"
-	},
-	{
-		"attributes": {
-			"bold": true
-		},
-		"insert": "Bold"
-	},
-	{
-		"insert": " and "
+		"insert": " text.\nSome "
 	},
 	{
 		"attributes": {
 			"italic": true
 		},
-		"insert": "italic"
+		"insert": "italic and "
 	},
 	{
+		"attributes": {
+			"italic": true,
+			"bold": true
+		},
+		"insert": "bold italic"
+	},
+	{
+		"insert": "\nBlock quote"
+	},
+	{
+		"attributes": {
+			"blockquote": true
+		},
 		"insert": "\n"
 	},
 	{

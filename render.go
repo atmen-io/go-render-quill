@@ -12,7 +12,7 @@ import (
 // customizing how operations of certain types are rendered. The returned byte slice is the rendered HTML.
 func Render(ops []byte, customHandlers map[string]OpHandler) ([]byte, error) {
 
-	var ro []rawOp
+	var ro []map[string]interface{}
 	err := json.Unmarshal(ops, &ro)
 	if err != nil {
 		return nil, err
@@ -46,9 +46,21 @@ type Op struct {
 	Attrs map[string]string // key is attribute name; value is either value string or "y" (meaning true) or "n" (meaning false)
 }
 
-type rawOp map[string]interface{}
+// HasAttr says if the Op is not nil and has the attribute set to the value "y".
+func (o *Op) HasAttr(attr string) bool {
+	return o != nil && o.Attrs[attr] == "y"
+}
 
-func rawOpToOp(ro rawOp) (*Op, error) {
+// ClosePrev checks if the previous Op opened any attribute tags that are not supposed to be set on the current Op and closes
+// those tags in the opposite order in which they were opened.
+func (o *Op) ClosePrevAttrs(buf *bytes.Buffer) {
+}
+
+func (o *Op) OpenAttrs(buf *bytes.Buffer) {
+}
+
+// rawOpToOp takes a raw Delta op as extracted from the JSON and turns it into an Op to make it usable for rendering.
+func rawOpToOp(ro map[string]interface{}) (*Op, error) {
 	if _, ok := ro["insert"]; !ok {
 		return nil, fmt.Errorf("op %q lacks an insert", ro)
 	}
@@ -58,6 +70,9 @@ func rawOpToOp(ro rawOp) (*Op, error) {
 		o.Type = "string"
 		o.Data = str
 	} else if mapStrIntf, ok := ro["insert"].(map[string]interface{}); ok {
+		if _, ok = mapStrIntf["insert"]; !ok {
+			return nil, fmt.Errorf("op %q lacks an insert", ro)
+		}
 		for mk := range mapStrIntf {
 			ins := make(map[string]string)
 			ins[mk] = extractString(mapStrIntf[mk])
@@ -74,24 +89,10 @@ func rawOpToOp(ro rawOp) (*Op, error) {
 	return o, nil
 }
 
-func extractString(v interface{}) string {
-	switch val := v.(type) {
-	case string:
-		return val
-	case bool:
-		if val == true {
-			return "y"
-		}
-		return "n"
-	default:
-		return ""
-	}
-}
-
-// An OpHandler takes the previous Op (which is nil if the current Op is the first) and the current Op and writes
-// the current Op to buf. The handler may need to know the previous Op to decide whether to begin writing the current
-// Op data only after closing the HTML tag that set attributes on the previous Op; all attributes of the previous Op
-// should be checked before writing the current one.
+// An OpHandler takes the previous Op (which is nil if the current Op is the first) and the current Op and writes the
+// current Op to buf. Each handler should check the previous Op to see if it has attributes that are not set on the current
+// Op and close the appropriate HTML tags before writing the current Op; also the handler should not needlessly open up a
+// tag for an attribute if it was already opened for the previous Op. This ensures that the rendered HTML is lean.
 type OpHandler func(prev *Op, cur *Op, buf *bytes.Buffer)
 
 var handlers = map[string]OpHandler{
@@ -100,9 +101,19 @@ var handlers = map[string]OpHandler{
 	},
 }
 
-func prevHas(o *Op, attr string) bool {
-	if o == nil {
-		return false
+// attrStates lists the tags currently open in the order in which they were opened.
+var attrStates = make([]string, 0, 2)
+
+func extractString(v interface{}) string {
+	switch val := v.(type) {
+	case string:
+		return val
+	case bool:
+		if val == true {
+			return "y"
+		}
+		return ""
+	default:
+		return ""
 	}
-	return o.Attrs[attr] == "y"
 }

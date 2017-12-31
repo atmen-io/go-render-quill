@@ -44,12 +44,13 @@ func Example() {
 
 func TestRawOpToOp(t *testing.T) {
 
-	ro := rawOp{
+	ro := map[string]interface{}{
 		"insert": "string to insert.\n",
 		"attributes": map[string]interface{}{
-			"bold":   true,
-			"link":   "https://widerwebs.com",
-			"italic": false,
+			"bold":       true,
+			"link":       "https://widerwebs.com",
+			"italic":     false,
+			"underlined": nil, // nil value is set if JSON value is null
 		},
 	}
 
@@ -57,9 +58,10 @@ func TestRawOpToOp(t *testing.T) {
 		Data: "string to insert.\n",
 		Type: "string",
 		Attrs: map[string]string{
-			"bold":   "y",
-			"italic": "n",
-			"link":   "https://widerwebs.com",
+			"bold":       "y",
+			"italic":     "",
+			"link":       "https://widerwebs.com",
+			"underlined": "",
 		},
 	}
 
@@ -81,7 +83,7 @@ func TestExtractString(t *testing.T) {
 	if extractString(true) != "y" {
 		t.Errorf("failed bool true extract")
 	}
-	if extractString(false) != "n" {
+	if extractString(false) != "" {
 		t.Errorf("failed bool false extract")
 	}
 }
