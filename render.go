@@ -6,39 +6,19 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 )
 
 func Render(ops []byte) ([]byte, error) {
 
-	var ro []map[string]interface{}
-	err := json.Unmarshal(ops, &ro)
-	if err != nil {
-		return nil, err
-	}
-
-	var html = new(bytes.Buffer)
-	var o *Op
-	var wr TypeWriter
-
-	for i := range ro {
-		o, err = rawOpToOp(ro[i])
-		if err != nil {
-			return nil, err
-		}
-		wr = typeWriterByType(o.Type)
-		if wr == nil {
-			return html.Bytes(), fmt.Errorf("no type handler found for op %q", ro[i])
-		}
-		wr.Write(o, html)
-	}
-
-	return html.Bytes(), nil
+	return RenderExtended(ops, nil, nil)
 
 }
 
 // RenderExtended takes the Delta array of insert operations and, optionally, a map of custom Op rendering functions that may
 // customizing how operations of certain types are rendered. The returned byte slice is the rendered HTML.
-func RenderExtended(ops []byte, tws func(string) TypeWriter, aws func(string) AttrWriter) ([]byte, error) {
+func RenderExtended(ops []byte, bws func(string) BlockWriter, aws func(string) AttrWriter) ([]byte, error) {
 
 	var ro []map[string]interface{}
 	err := json.Unmarshal(ops, &ro)
@@ -46,26 +26,62 @@ func RenderExtended(ops []byte, tws func(string) TypeWriter, aws func(string) At
 		return nil, err
 	}
 
-	var html = new(bytes.Buffer)
-	var o *Op
-	var wr TypeWriter
+	// attrStates lists the tags currently open in the order in which they were opened.
+	var (
+		attrStates = make([]string, 0, 2)
+		blockType  string // the current block type
+		html       = new(bytes.Buffer)
+		o          *Op
+		wr         BlockWriter
+	)
 
 	for i := range ro {
+
 		o, err = rawOpToOp(ro[i])
 		if err != nil {
 			return nil, err
 		}
-		if tws != nil {
-			if custom := tws(o.Type); custom != nil {
-				wr = tws(o.Type)
+
+		if bws != nil {
+			if custom := bws(o.Type); custom != nil {
+				wr = custom
 			}
 		} else {
-			wr = typeWriterByType(o.Type)
+			wr = blockWriterByType(o.Type)
 		}
 		if wr == nil {
 			return html.Bytes(), fmt.Errorf("no type handler found for op %q", ro[i])
 		}
+
+		// Check if the block type is changing. If it is
+		if o.Type != blockType {
+		}
+
+		setUpClasses(o, wr, aws)
+
+		if wr.TagName() != "" {
+			html.WriteString("<")
+			html.WriteString(wr.TagName())
+			writeClasses(wr, html)
+		}
+
+		split := strings.Split(o.Data, "\n")
+		if len(split) > 1 {
+			html.WriteString(split[0])
+			html.WriteString("</p>")
+			o.ClosePrevAttrs(html)
+		} else {
+			o.ClosePrevAttrs(html)
+		}
+
 		wr.Write(o, html)
+
+		if wr.TagName() != "" {
+			html.WriteString("</")
+			html.WriteString(wr.TagName())
+			html.WriteString("</")
+		}
+
 	}
 
 	return html.Bytes(), nil
@@ -96,9 +112,6 @@ func (o *Op) ClosePrevAttrs(buf *bytes.Buffer) {
 func (o *Op) OpenAttrs(buf *bytes.Buffer) {
 }
 
-// attrStates lists the tags currently open in the order in which they were opened.
-var attrStates = make([]string, 0, 2)
-
 // rawOpToOp takes a raw Delta op as extracted from the JSON and turns it into an Op to make it usable for rendering.
 func rawOpToOp(ro map[string]interface{}) (*Op, error) {
 	if _, ok := ro["insert"]; !ok {
@@ -107,7 +120,7 @@ func rawOpToOp(ro map[string]interface{}) (*Op, error) {
 	o := new(Op)
 	if str, ok := ro["insert"].(string); ok {
 		// This op is a simple string insert.
-		o.Type = "string"
+		o.Type = "text"
 		o.Data = str
 	} else if mapStrIntf, ok := ro["insert"].(map[string]interface{}); ok {
 		if _, ok = mapStrIntf["insert"]; !ok {
@@ -145,6 +158,17 @@ type TypeWriter interface {
 	//Close(o *Op, buf *bytes.Buffer)
 }
 
+type BlockWriter interface {
+	TagName() string
+	SetClass(string)
+	GetClasses() []string
+	Write(*Op, *bytes.Buffer)
+}
+
+type BlockData struct {
+	TagName string
+}
+
 //type TypeWriter struct{
 //	Open, Write, Close func(o *Op, buf *bytes.Buffer)
 //}
@@ -153,7 +177,7 @@ type TypeWriter interface {
 //	Open, Write, Close func(o *Op, buf *bytes.Buffer)
 //}
 
-func typeWriterByType(t string) TypeWriter {
+func blockWriterByType(t string) BlockWriter {
 	switch t {
 	case "text":
 		return new(textWriter)
@@ -164,8 +188,45 @@ func typeWriterByType(t string) TypeWriter {
 }
 
 type AttrWriter interface {
-	Open(o *Op, buf *bytes.Buffer)
-	Close(o *Op, buf *bytes.Buffer)
+	TagName() string
+	SetClass(string)
+	GetClasses() []string
+	Write(*Op, *bytes.Buffer)
+}
+
+func attrWriterByType(t string) AttrWriter {
+	switch t {
+	case "bold":
+		return new(boldWriter)
+	case "italic":
+		return new(italicWriter)
+	}
+	return nil
+}
+
+func setUpClasses(o *Op, bw BlockWriter, aws func(string) AttrWriter) {
+	var ar AttrWriter
+	for attr := range o.Attrs {
+		if aws != nil {
+			if custom := aws(attr); custom != nil {
+				ar = custom
+			}
+		} else {
+			ar = attrWriterByType(attr)
+		}
+		if ar == nil {
+			// This attribute type is unknown.
+			//return html.Bytes(), fmt.Errorf("no type handler found for op %q", ro[i])
+			return
+		}
+	}
+}
+
+func writeClasses(cl []string, buf *bytes.Buffer) {
+	if len(cl) > 0 {
+		buf.WriteString(" class=")
+		buf.WriteString(strconv.Quote(strings.Join(cl, " ")))
+	}
 }
 
 func extractString(v interface{}) string {

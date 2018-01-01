@@ -3,38 +3,60 @@ package quill
 import (
 	"bytes"
 	"strconv"
-	"strings"
 )
 
-type textWriter struct{}
-
-//func (tw *textWriter) Open(o *Op, buf *bytes.Buffer) {
-//}
+type textWriter struct {
+	classes []string
+}
 
 func (tw *textWriter) Write(o *Op, buf *bytes.Buffer) {
 
-	split := strings.Split(o.Data, "\n")
-	if len(split) > 1 {
-		buf.WriteString(split[0])
-		buf.WriteString("</p>")
-		o.ClosePrevAttrs(buf)
-	} else {
-		o.ClosePrevAttrs(buf)
-	}
+
 
 	buf.WriteString("<p>")
 	buf.WriteString(o.Data)
 
-
 }
 
-//func (tw *textWriter) Close(o *Op, buf *bytes.Buffer) {
-//}
+func (tw *textWriter) TagName() string {
+	return "p"
+}
 
-type imageWriter struct{}
+func (tw *textWriter) SetClass(class string) {
+	for _, c := range tw.classes {
+		// Avoiding adding a class twice.
+		if c == class {
+			return
+		}
+	}
+	tw.classes = append(tw.classes, class)
+}
 
-//func (iw *imageWriter) Open(o *Op, buf *bytes.Buffer) {
-//}
+func (tw *textWriter) GetClasses() []string {
+	return tw.classes
+}
+
+type imageWriter struct {
+	classes []string
+}
+
+func (iw *imageWriter) TagName() string {
+	return "" // The body contains the entire element.
+}
+
+func (iw *imageWriter) SetClass(class string) {
+	for _, c := range iw.classes {
+		// Avoiding adding a class twice.
+		if c == class {
+			return
+		}
+	}
+	iw.classes = append(iw.classes, class)
+}
+
+func (iw *imageWriter) GetClasses() []string {
+	return iw.classes
+}
 
 func (iw *imageWriter) Write(o *Op, buf *bytes.Buffer) {
 
@@ -45,6 +67,3 @@ func (iw *imageWriter) Write(o *Op, buf *bytes.Buffer) {
 	buf.WriteString(">")
 
 }
-
-//func (iw *imageWriter) Close(o *Op, buf *bytes.Buffer) {
-//}
