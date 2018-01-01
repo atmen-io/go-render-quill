@@ -13,7 +13,7 @@ import (
 
 // Render takes the Delta array of insert operations and returns the rendered HTML using the default settings of this package.
 func Render(ops []byte) ([]byte, error) {
-	return RenderExtended(ops, nil, nil)
+	return RenderExtended(ops, nil)
 }
 
 // RenderExtended takes the Delta array of insert operations and, optionally, a function that provides a BlockWriter for block
@@ -21,39 +21,35 @@ func Render(ops []byte) ([]byte, error) {
 // may define an InlineWriter for certain types of inline attributes. Neither of these two functions must always have to give
 // a non-nil value. The provided value will be used (and override the default functionality) only if it is not nil.
 // The returned byte slice is the rendered HTML.
-func RenderExtended(ops []byte, bws func(blockType string) BlockWriter, aws func(attrType string) InlineWriter) ([]byte, error) {
+func RenderExtended(ops []byte, customFormats func(*Op) Formatter) ([]byte, error) {
 
-	var ro []rawOp
-	err := json.Unmarshal(ops, &ro)
+	var raw []rawOp
+	err := json.Unmarshal(ops, &raw)
 	if err != nil {
 		return nil, err
 	}
 
 	var (
-		//attrStates = make([]string, 0, 2) // the tags currently open in the order in which they were opened
-		attrs   = new(AttrState)
 		html    = new(bytes.Buffer) // the final output
 		tempBuf = new(bytes.Buffer) // temporary buffer reused for each block element
 		o       *Op
-		bw      BlockWriter
+		fm      Formatter
 	)
 
-	for i := range ro {
+	attrs := &AttrState{ // the tags currently open in the order in which they were opened
+		temp: tempBuf,
+	}
 
-		o, err = rawOpToOp(ro[i])
+	for i := range raw {
+
+		o, err = raw[i].makeOp()
 		if err != nil {
 			return nil, err
 		}
 
-		if bws != nil {
-			if custom := bws(o.Type); custom != nil {
-				bw = custom
-			}
-		} else {
-			bw = blockWriterByType(o.Type)
-		}
-		if bw == nil {
-			return html.Bytes(), fmt.Errorf("no type handler found for op %q", ro[i])
+		fm = o.getFormatter(customFormats)
+		if fm == nil {
+			return html.Bytes(), fmt.Errorf("no formatter found for op %q", raw[i])
 		}
 
 		o.closePrevAttrs(tempBuf, attrs)
@@ -66,12 +62,22 @@ func RenderExtended(ops []byte, bws func(blockType string) BlockWriter, aws func
 
 			for i := range split {
 
-				bw.Open(o, attrs)
+				if i > 0 {
+					oi := &Op{
+						Data:  split[i],
+						Attrs: o.Attrs,
+						// Type:
+					}
+					oi.getFormatter(customFormats)
+					oi.write(tempBuf)
+				}
+
+				//bw.Open(o, attrs)
+
+				o.write()
 
 				html.Write(tempBuf.Bytes())
 				html.WriteString(split[i])
-
-				bw.Close(o, attrs)
 
 				tempBuf.Reset()
 
@@ -95,12 +101,60 @@ type Op struct {
 	Attrs map[string]string // key is attribute name; value is either value string or "y" (meaning true) or "n" (meaning false)
 }
 
-// HasAttr says if the Op is not nil and has the attribute set to the value "y".
-func (o *Op) HasAttr(attr string) bool {
-	return o != nil && o.Attrs[attr] == "y"
+func (o *Op) write(buf *bytes.Buffer, fm Formatter) {
+	if fm.TagName(o) != "" {
+		buf.WriteString("<")
+		buf.WriteString(fm.TagName())
+		buf.WriteString(">")
+	}
+	buf.WriteString(o.Data)
+	if fm.TagName() != "" {
+		buf.WriteString("</")
+		buf.WriteString(fm.TagName())
+		buf.WriteString(">")
+	}
 }
 
-// ClosePrev checks if the previous Op opened any attribute tags that are not supposed to be set on the current Op and closes
+// HasAttr says if the Op is not nil and has the attribute set to a non-blank value.
+func (o *Op) HasAttr(attr string) bool {
+	return o != nil && o.Attrs[attr] != ""
+}
+
+// getFormatter returns a formatter based on the keyword (either "text" or "" or an attribute name) and the Op settings.
+func (o *Op) getFormatter(keyword string, customFormats func(string, *Op) Formatter) Formatter {
+
+	if customFormats != nil {
+		if custom := customFormats(keyword, o); custom != nil {
+			return custom
+		}
+	}
+
+	switch keyword {
+	case "text":
+		return new(textFormat)
+	case "header":
+		return &headerFormat{
+			h: "h"+o.Attrs["header"],
+		}
+	case "list":
+		var lt string
+		if o.Attrs["list"] == "bullet" {
+			lt = "ul"
+		} else {
+			lt = "ol"
+		}
+		return &listFormat{
+			lType: lt,
+		}
+	case "blockquote":
+		return new(blockQuoteFormat)
+	}
+
+	return nil
+
+}
+
+// closePrevAttrs checks if the previous Op opened any attribute tags that are not supposed to be set on the current Op and closes
 // those tags in the opposite order in which they were opened.
 func (o *Op) closePrevAttrs(buf *bytes.Buffer, st *AttrState) {
 	for i := len(st.t) - 1; i >= 0; i-- { // Start with the last attribute opened.
@@ -112,46 +166,6 @@ func (o *Op) closePrevAttrs(buf *bytes.Buffer, st *AttrState) {
 func (o *Op) OpenAttrs(buf *bytes.Buffer) {
 }
 
-type rawOp struct {
-	Insert interface{}            `json:"insert"`
-	Attrs  map[string]interface{} `json:"attributes"`
-}
-
-// rawOpToOp takes a raw Delta op as extracted from the JSON and turns it into an Op to make it usable for rendering.
-func rawOpToOp(ro rawOp) (*Op, error) {
-	if ro.Insert == nil {
-		return nil, fmt.Errorf("op %q lacks an insert", ro)
-	}
-	o := new(Op)
-	if str, ok := ro.Insert.(string); ok {
-		o.Data = str
-		if str == "\n" { // This op is a block element.
-			// The first element in the attributes map should be the only element (giving the block type).
-			for k := range ro.Attrs {
-				o.Type = k
-				break
-			}
-		} else { // This op is a simple string.
-			o.Type = "text"
-		}
-	} else if mapStrIntf, ok := ro.Insert.(map[string]interface{}); ok {
-		if _, ok = mapStrIntf["insert"]; !ok {
-			return nil, fmt.Errorf("op %q lacks an insert", ro)
-		}
-		for mk := range mapStrIntf {
-			ins := make(map[string]string)
-			ins[mk] = extractString(mapStrIntf[mk])
-		}
-	}
-	if ro.Attrs != nil {
-		o.Attrs = make(map[string]string, len(ro.Attrs))
-		for attr := range ro.Attrs {
-			o.Attrs[attr] = extractString(ro.Attrs[attr])
-		}
-	}
-	return o, nil
-}
-
 // An OpHandler takes the previous Op (which is nil if the current Op is the first) and the current Op and writes the
 // current Op to buf. Each handler should check the previous Op to see if it has attributes that are not set on the current
 // Op and close the appropriate HTML tags before writing the current Op; also the handler should not needlessly open up a
@@ -160,64 +174,71 @@ func rawOpToOp(ro rawOp) (*Op, error) {
 // A BlockWriter defines how an insert of block type gets rendered. The opening HTML tag of a block element is written to the
 // main buffer only after the "\n" character terminating the block is reached (the Op with the "\n" character holds the information
 // about the block element).
-type BlockWriter interface {
-	Open(*Op, *AttrState)
-	Close(*Op, *AttrState)
-	//Write(*Op, io.Writer)
-}
+//type BlockWriter interface {
+//	Open(*Op, *AttrState)
+//	Close(*Op, *AttrState)
+//	//Write(*Op, io.Writer)
+//}
 
-func blockWriterByType(t string) BlockWriter {
-	switch t {
-	case "text":
-		return new(textWriter)
-	case "blockquote":
-		return new(blockQuoteWriter)
-	case "header":
-		return new(headerWriter)
-	}
-	return nil
-}
+//func blockWriterByType(t string) BlockWriter {
+//	switch t {
+//	case "text":
+//		return new(textWriter)
+//	case "blockquote":
+//		return new(blockQuoteWriter)
+//	case "header":
+//		return new(headerWriter)
+//	case "list":
+//		return new(listWriter)
+//	}
+//	return nil
+//}
 
 //type InlineWriter interface {
 //	TagName() string
 //	Write(*Op, *bytes.Buffer)
 //}
 
-type InlineWriter interface {
-	//Attr() string // the attribute key that identifies this inline format
-	Open(*Op, *AttrState)
-	Close(*Op, io.Writer)
+type Formatter interface {
+	TagName() string // Optionally wrap the element with the tag (return empty string for no wrap).
+	Class() string   // Optionally give a CSS class to set (return empty string for no class).
 }
 
-func inlineWriterByType(t string) InlineWriter {
-	switch t {
-	case "bold":
-		return new(boldWriter)
-	case "image":
-		return new(imageWriter)
-	case "italic":
-		return new(italicWriter)
-	}
-	return nil
-}
+//type InlineWriter interface {
+//	//Attr() string // the attribute key that identifies this inline format
+//	Open(*Op, *AttrState)
+//	Close(*Op, io.Writer)
+//}
 
-func setUpClasses(o *Op, bw BlockWriter, aws func(string) InlineWriter) {
-	var ar InlineWriter
-	for attr := range o.Attrs {
-		if aws != nil {
-			if custom := aws(attr); custom != nil {
-				ar = custom
-			}
-		} else {
-			ar = inlineWriterByType(attr)
-		}
-		if ar == nil {
-			// This attribute type is unknown.
-			//return html.Bytes(), fmt.Errorf("no type handler found for op %q", ro[i])
-			return
-		}
-	}
-}
+//func inlineWriterByType(t string) Formatter {
+//	switch t {
+//	case "bold":
+//		return new(boldWriter)
+//	case "image":
+//		return new(imageWriter)
+//	case "italic":
+//		return new(italicWriter)
+//	}
+//	return nil
+//}
+
+//func setUpClasses(o *Op, bw BlockWriter, aws func(string) InlineWriter) {
+//	var ar InlineWriter
+//	for attr := range o.Attrs {
+//		if aws != nil {
+//			if custom := aws(attr); custom != nil {
+//				ar = custom
+//			}
+//		} else {
+//			ar = inlineWriterByType(attr)
+//		}
+//		if ar == nil {
+//			// This attribute type is unknown.
+//			//return html.Bytes(), fmt.Errorf("no type handler found for op %q", ro[i])
+//			return
+//		}
+//	}
+//}
 
 type AttrState struct {
 	t    []string  // the list of currently open attribute tags
@@ -247,8 +268,6 @@ func AttrsToClasses(attrs map[string]string) (classes []string) {
 	return
 }
 
-//var attrClasses = [...]string{"align"}
-
 func ClassesList(cl []string) (classAttr string) {
 	if len(cl) > 0 {
 		classAttr = " class=" + strconv.Quote(strings.Join(cl, " "))
@@ -262,17 +281,3 @@ func ClassesList(cl []string) (classAttr string) {
 //		buf.WriteString(strconv.Quote(strings.Join(cl, " ")))
 //	}
 //}
-
-func extractString(v interface{}) string {
-	switch val := v.(type) {
-	case string:
-		return val
-	case bool:
-		if val == true {
-			return "y"
-		}
-	case float64:
-		return strconv.FormatFloat(val, 'f', 0, 64)
-	}
-	return ""
-}

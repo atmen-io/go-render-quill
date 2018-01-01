@@ -1,87 +1,29 @@
 package quill
 
-import (
-	"bytes"
-)
+type textFormat struct{}
 
-type textWriter struct {
-	classes []string
+func (*textFormat) TagName() string { return "p" }
+
+func (*textFormat) Class() string { return "" }
+
+type blockQuoteFormat struct{}
+
+func (*blockQuoteFormat) TagName() string { return "blockquote" }
+
+func (*blockQuoteFormat) Class() string { return "" }
+
+type headerFormat struct{
+	h string // the string "h1", "h2", ...
 }
 
-func (tw *textWriter) Write(o *Op, tempBuf *bytes.Buffer) {
-	tempBuf.WriteString(o.Data)
+func (hf *headerFormat) TagName() string { return hf.h }
+
+func (*headerFormat) Class() string { return "" }
+
+type listFormat struct{
+	lType string // either "ul" or "ol"
 }
 
-func (tw *textWriter) Open(o *Op, as *AttrState) string {
-	return "<p" + ClassesList(AttrsToClasses(o.Attrs)) + ">"
-}
+func (lf *listFormat) TagName() string { return lf.lType }
 
-func (tw *textWriter) Close(o *Op, as *AttrState) string {
-	return "</p>"
-}
-
-//func (tw *textWriter) setClass(class string) {
-//	for _, c := range tw.classes {
-//		// Avoiding adding a class twice.
-//		if c == class {
-//			return
-//		}
-//	}
-//	tw.classes = append(tw.classes, class)
-//}
-
-func (tw *textWriter) Classes() []string {
-	return tw.classes
-}
-
-type blockQuoteWriter struct {
-	classes []string
-}
-
-func (bw *blockQuoteWriter) Write(o *Op, buf *bytes.Buffer) {
-	buf.WriteString(o.Data)
-}
-
-func (bw *blockQuoteWriter) TagName(o *Op) string {
-	return "blockquote"
-}
-
-func (bw *blockQuoteWriter) SetClass(class string) {
-	for _, c := range bw.classes {
-		// Avoiding adding a class twice.
-		if c == class {
-			return
-		}
-	}
-	bw.classes = append(bw.classes, class)
-}
-
-func (bw *blockQuoteWriter) GetClasses() []string {
-	return bw.classes
-}
-
-type headerWriter struct {
-	classes []string
-}
-
-func (hw *headerWriter) Write(o *Op, buf *bytes.Buffer) {
-	buf.WriteString(o.Data)
-}
-
-func (hw *headerWriter) TagName(o *Op) string {
-	return "h" + o.Attrs["header"]
-}
-
-func (hw *headerWriter) SetClass(class string) {
-	for _, c := range hw.classes {
-		// Avoiding adding a class twice.
-		if c == class {
-			return
-		}
-	}
-	hw.classes = append(hw.classes, class)
-}
-
-func (hw *headerWriter) GetClasses() []string {
-	return hw.classes
-}
+func (*listFormat) Class() string { return "" }
