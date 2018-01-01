@@ -10,7 +10,7 @@ import (
 
 // Render takes the Delta array of insert operations and, optionally, a map of custom Op rendering functions that may
 // customizing how operations of certain types are rendered. The returned byte slice is the rendered HTML.
-func Render(ops []byte, th map[string]TypeHandler, ah map[string]AttrHandler) ([]byte, error) {
+func Render(ops []byte, tws func(string) TypeWriter, aws func(string) AttrWriter) ([]byte, error) {
 
 	var ro []map[string]interface{}
 	err := json.Unmarshal(ops, &ro)
@@ -20,17 +20,22 @@ func Render(ops []byte, th map[string]TypeHandler, ah map[string]AttrHandler) ([
 
 	var html = new(bytes.Buffer)
 	var o *Op
+	var wr TypeWriter
 
 	for i := range ro {
 		o, err = rawOpToOp(ro[i])
 		if err != nil {
 			return nil, err
 		}
-		if _, ok := th[o.Type]; ok {
-			th[o.Type](o, html)
+		if custom := tws(o.Type); custom != nil {
+			wr = tws(o.Type)
 		} else {
-			opHandlers[o.Type](o, html)
+			wr = typeWriterByType(o.Type)
 		}
+		if wr == nil {
+			return html.Bytes(), fmt.Errorf("no type handler found for op %q", ro[i])
+		}
+		wr.Write(o, html)
 	}
 
 	return html.Bytes(), nil
@@ -51,9 +56,9 @@ func (o *Op) HasAttr(attr string) bool {
 // ClosePrev checks if the previous Op opened any attribute tags that are not supposed to be set on the current Op and closes
 // those tags in the opposite order in which they were opened.
 func (o *Op) ClosePrevAttrs(buf *bytes.Buffer) {
-	for i := len(attrStates); i > 0; i-- {
-		indx := i - 1
-		if !o.HasAttr(attrStates[indx]) {
+	for i := len(attrStates) - 1; i >= 0; i-- { // Start with the last attribute opened.
+		if !o.HasAttr(attrStates[i]) {
+
 		}
 	}
 }
@@ -100,21 +105,37 @@ func rawOpToOp(ro map[string]interface{}) (*Op, error) {
 // tag for an attribute if it was already opened for the previous Op. This ensures that the rendered HTML is lean.
 //type OpHandler func(o *Op, buf *bytes.Buffer)
 
-type OpHandler struct {
-	Open, Write, Close func(o *Op, buf *bytes.Buffer)
+//type OpHandler struct {
+//	Open, Write, Close func(o *Op, buf *bytes.Buffer)
+//}
+
+type TypeWriter interface {
+	//Open(o *Op, buf *bytes.Buffer)
+	Write(o *Op, buf *bytes.Buffer)
+	//Close(o *Op, buf *bytes.Buffer)
 }
 
-var Text = OpHandler{
-	Open: func(o *Op, buf *bytes.Buffer) {
-	},
-	Write: func(o *Op, buf *bytes.Buffer) {
-	},
-	Close: func(o *Op, buf *bytes.Buffer) {
-	},
+//type TypeWriter struct{
+//	Open, Write, Close func(o *Op, buf *bytes.Buffer)
+//}
+
+//type AttrWriter struct {
+//	Open, Write, Close func(o *Op, buf *bytes.Buffer)
+//}
+
+func typeWriterByType(t string) TypeWriter {
+	switch t {
+	case "text":
+		return new(textWriter)
+	case "image":
+		return new(imageWriter)
+	}
+	return nil
 }
 
-var opHandlers = map[string]OpHandler{
-	"text": Text,
+type AttrWriter interface {
+	Open(o *Op, buf *bytes.Buffer)
+	Close(o *Op, buf *bytes.Buffer)
 }
 
 func extractString(v interface{}) string {
