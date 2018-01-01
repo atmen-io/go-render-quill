@@ -10,12 +10,16 @@ import (
 	"strings"
 )
 
+// Render takes the Delta array of insert operations and returns the rendered HTML using the default settings of this package.
 func Render(ops []byte) ([]byte, error) {
 	return RenderExtended(ops, nil, nil)
 }
 
-// RenderExtended takes the Delta array of insert operations and, optionally, a map of custom Op rendering functions that may
-// customizing how operations of certain types are rendered. The returned byte slice is the rendered HTML.
+// RenderExtended takes the Delta array of insert operations and, optionally, a function that provides a BlockWriter for block
+// elements (text, header, blockquote, etc.) to customize how those elements are rendered, and, optionally, a function that
+// may define an InlineWriter for certain types of inline attributes. Neither of these two functions must always have to give
+// a non-nil value. The provided value will be used (and override the default functionality) only if it is not nil.
+// The returned byte slice is the rendered HTML.
 func RenderExtended(ops []byte, bws func(string) BlockWriter, aws func(string) InlineWriter) ([]byte, error) {
 
 	var ro []map[string]interface{}
