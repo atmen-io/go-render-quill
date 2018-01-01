@@ -8,9 +8,7 @@ import (
 	"fmt"
 )
 
-// Render takes the Delta array of insert operations and, optionally, a map of custom Op rendering functions that may
-// customizing how operations of certain types are rendered. The returned byte slice is the rendered HTML.
-func Render(ops []byte, tws func(string) TypeWriter, aws func(string) AttrWriter) ([]byte, error) {
+func Render(ops []byte) ([]byte, error) {
 
 	var ro []map[string]interface{}
 	err := json.Unmarshal(ops, &ro)
@@ -27,8 +25,40 @@ func Render(ops []byte, tws func(string) TypeWriter, aws func(string) AttrWriter
 		if err != nil {
 			return nil, err
 		}
-		if custom := tws(o.Type); custom != nil {
-			wr = tws(o.Type)
+		wr = typeWriterByType(o.Type)
+		if wr == nil {
+			return html.Bytes(), fmt.Errorf("no type handler found for op %q", ro[i])
+		}
+		wr.Write(o, html)
+	}
+
+	return html.Bytes(), nil
+
+}
+
+// RenderExtended takes the Delta array of insert operations and, optionally, a map of custom Op rendering functions that may
+// customizing how operations of certain types are rendered. The returned byte slice is the rendered HTML.
+func RenderExtended(ops []byte, tws func(string) TypeWriter, aws func(string) AttrWriter) ([]byte, error) {
+
+	var ro []map[string]interface{}
+	err := json.Unmarshal(ops, &ro)
+	if err != nil {
+		return nil, err
+	}
+
+	var html = new(bytes.Buffer)
+	var o *Op
+	var wr TypeWriter
+
+	for i := range ro {
+		o, err = rawOpToOp(ro[i])
+		if err != nil {
+			return nil, err
+		}
+		if tws != nil {
+			if custom := tws(o.Type); custom != nil {
+				wr = tws(o.Type)
+			}
 		} else {
 			wr = typeWriterByType(o.Type)
 		}
