@@ -28,7 +28,7 @@ func TestRawOp_makeOp(t *testing.T) {
 			Insert: "\n",
 			Attrs: map[string]interface{}{
 				"align":      "center",
-				"blockquote": "y",
+				"blockquote": true,
 			},
 		},
 	}
@@ -53,9 +53,10 @@ func TestRawOp_makeOp(t *testing.T) {
 		},
 		{
 			Data: "\n",
-			Type: "blockquote",
+			Type: "text",
 			Attrs: map[string]string{
-				"align": "center",
+				"align":      "center",
+				"blockquote": "y",
 			},
 		},
 	}

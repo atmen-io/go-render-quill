@@ -17,12 +17,9 @@ func (ro *rawOp) makeOp() (*Op, error) {
 	}
 	o := new(Op)
 	if str, ok := ro.Insert.(string); ok {
+		// This op is a simple string insert.
 		o.Data = str
-		// If str == "\n" then the op type is not set here but must be determined by the attributes.
-		if str != "\n" {
-			// This op is a simple string insert.
-			o.Type = "text"
-		}
+		o.Type = "text"
 	} else if mapStrIntf, ok := ro.Insert.(map[string]interface{}); ok {
 		if _, ok = mapStrIntf["insert"]; !ok {
 			return nil, fmt.Errorf("op %q lacks an insert", ro)

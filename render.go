@@ -5,7 +5,6 @@ package quill
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -33,7 +32,7 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) ([]by
 		html    = new(bytes.Buffer) // the final output
 		tempBuf = new(bytes.Buffer) // temporary buffer reused for each block element
 		o       *Op
-		fm      Formatter
+		//fm      Formatter
 	)
 
 	attrs := &AttrState{ // the tags currently open in the order in which they were opened
@@ -47,29 +46,67 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) ([]by
 			return nil, err
 		}
 
+		fm := o.getFormatter(o.Type, customFormats)
+		if fm == nil {
+			continue // not returning an error
+		}
+
+		// If the op type is the kind of thing that there is a Write method defined for, we just write the body.
+		if bw, ok := fm.(BodyWriter); ok {
+			bw.Write(tempBuf)
+			continue
+		}
+
+		if fm.TagName() != "" {
+			tempBuf.WriteByte('<')
+			tempBuf.WriteString(fm.TagName())
+		}
+
+		for attr := range o.Attrs {
+			attrFm := o.getFormatter(attr, customFormats)
+			if attrFm == nil {
+				continue // not returning an error
+			}
+			if bw, ok := attrFm.(BodyWriter); ok {
+				bw.Write(tempBuf)
+			} else {
+				tempBuf.WriteString(o.Data)
+			}
+		}
+
+		if fm.TagName() != "" {
+			tempBuf.WriteByte('>')
+		}
+
 		// Open the last block element, write its body and close it to move on only when the "\n" of the
 		// last block element is reached.
 		if strings.IndexByte(o.Data, '\n') != -1 {
 
-			split := strings.Split(o.Data, "\n")
+			if o.Data == "\n" {
 
-			for i := range split {
+			} else {
 
-				if i > 0 {
-					oi := &Op{
-						Data:  split[i],
-						Attrs: o.Attrs,
-						// Type:
+				split := strings.Split(o.Data, "\n")
+
+				for i := range split {
+
+					if i > 0 {
+						oi := &Op{
+							Data:  split[i],
+							Attrs: o.Attrs,
+							// Type:
+						}
+						//oi.write(tempBuf *bytes.Buffer, fm Formatter)
 					}
-					oi.write(tempBuf *bytes.Buffer, fm Formatter)
+
+					//bw.Open(o, attrs)
+
+					html.Write(tempBuf.Bytes())
+					html.WriteString(split[i])
+
+					tempBuf.Reset()
+
 				}
-
-				//bw.Open(o, attrs)
-
-				html.Write(tempBuf.Bytes())
-				html.WriteString(split[i])
-
-				tempBuf.Reset()
 
 			}
 
@@ -86,7 +123,7 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) ([]by
 			for attr := range o.Attrs {
 				fm = o.getFormatter(attr, customFormats)
 				if fm != nil {
-					if bw, ok := fm.(BodyWriter) {
+					if bw, ok := fm.(BodyWriter); ok {
 						bw.Write(tempBuf)
 					} else {
 						tempBuf.WriteString(o.Data)
@@ -94,6 +131,13 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) ([]by
 				}
 			}
 
+		}
+
+		tempBuf.WriteString(o.Data)
+		if fm.TagName() != "" {
+			tempBuf.WriteString("</")
+			tempBuf.WriteString(fm.TagName())
+			tempBuf.WriteByte('>')
 		}
 
 	}
@@ -106,20 +150,6 @@ type Op struct {
 	Data  string            // the text to insert or the value of the embed object (http://quilljs.com/docs/delta/#embeds)
 	Type  string            // the type of the op (typically "string", but you can register any other type)
 	Attrs map[string]string // key is attribute name; value is either value string or "y" (meaning true) or "n" (meaning false)
-}
-
-func (o *Op) write(buf *bytes.Buffer, fm Formatter) {
-	if fm.TagName() != "" {
-		buf.WriteString("<")
-		buf.WriteString(fm.TagName())
-		buf.WriteString(">")
-	}
-	buf.WriteString(o.Data)
-	if fm.TagName() != "" {
-		buf.WriteString("</")
-		buf.WriteString(fm.TagName())
-		buf.WriteString(">")
-	}
 }
 
 // HasAttr says if the Op is not nil and has the attribute set to a non-blank value.
