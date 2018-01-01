@@ -23,7 +23,7 @@ func Render(ops []byte) ([]byte, error) {
 // The returned byte slice is the rendered HTML.
 func RenderExtended(ops []byte, bws func(blockType string) BlockWriter, aws func(attrType string) InlineWriter) ([]byte, error) {
 
-	var ro []map[string]interface{}
+	var ro []rawOp
 	err := json.Unmarshal(ops, &ro)
 	if err != nil {
 		return nil, err
@@ -58,8 +58,8 @@ func RenderExtended(ops []byte, bws func(blockType string) BlockWriter, aws func
 
 		o.closePrevAttrs(tempBuf, attrs)
 
-		// Close the last block element, open a new one, and write the inner body of the new block element
-		// only when the "\n" of the new block element is reached.
+		// Open the last block element, write its body and close it to move on only when the "\n" of the
+		// last block element is reached.
 		if strings.IndexByte(o.Data, '\n') != -1 {
 
 			split := strings.Split(o.Data, "\n")
@@ -79,7 +79,7 @@ func RenderExtended(ops []byte, bws func(blockType string) BlockWriter, aws func
 
 		} else {
 
-			bw.Write(o, tempBuf)
+			tempBuf.WriteString(o.Data)
 
 		}
 
@@ -112,17 +112,29 @@ func (o *Op) closePrevAttrs(buf *bytes.Buffer, st *AttrState) {
 func (o *Op) OpenAttrs(buf *bytes.Buffer) {
 }
 
+type rawOp struct {
+	Insert interface{}            `json:"insert"`
+	Attrs  map[string]interface{} `json:"attributes"`
+}
+
 // rawOpToOp takes a raw Delta op as extracted from the JSON and turns it into an Op to make it usable for rendering.
-func rawOpToOp(ro map[string]interface{}) (*Op, error) {
-	if _, ok := ro["insert"]; !ok {
+func rawOpToOp(ro rawOp) (*Op, error) {
+	if ro.Insert == nil {
 		return nil, fmt.Errorf("op %q lacks an insert", ro)
 	}
 	o := new(Op)
-	if str, ok := ro["insert"].(string); ok {
-		// This op is a simple string insert.
-		o.Type = "text"
+	if str, ok := ro.Insert.(string); ok {
 		o.Data = str
-	} else if mapStrIntf, ok := ro["insert"].(map[string]interface{}); ok {
+		if str == "\n" { // This op is a block element.
+			// The first element in the attributes map should be the only element (giving the block type).
+			for k := range ro.Attrs {
+				o.Type = k
+				break
+			}
+		} else { // This op is a simple string.
+			o.Type = "text"
+		}
+	} else if mapStrIntf, ok := ro.Insert.(map[string]interface{}); ok {
 		if _, ok = mapStrIntf["insert"]; !ok {
 			return nil, fmt.Errorf("op %q lacks an insert", ro)
 		}
@@ -131,12 +143,10 @@ func rawOpToOp(ro map[string]interface{}) (*Op, error) {
 			ins[mk] = extractString(mapStrIntf[mk])
 		}
 	}
-	if _, ok := ro["attributes"]; ok {
-		o.Attrs = make(map[string]string)
-		if attrs, ok := ro["attributes"].(map[string]interface{}); ok {
-			for attr := range attrs {
-				o.Attrs[attr] = extractString(attrs[attr])
-			}
+	if ro.Attrs != nil {
+		o.Attrs = make(map[string]string, len(ro.Attrs))
+		for attr := range ro.Attrs {
+			o.Attrs[attr] = extractString(ro.Attrs[attr])
 		}
 	}
 	return o, nil
@@ -153,7 +163,7 @@ func rawOpToOp(ro map[string]interface{}) (*Op, error) {
 type BlockWriter interface {
 	Open(*Op, *AttrState)
 	Close(*Op, *AttrState)
-	Write(*Op, io.Writer)
+	//Write(*Op, io.Writer)
 }
 
 func blockWriterByType(t string) BlockWriter {
@@ -176,7 +186,7 @@ func blockWriterByType(t string) BlockWriter {
 type InlineWriter interface {
 	//Attr() string // the attribute key that identifies this inline format
 	Open(*Op, *AttrState)
-	Close(*Op, *bytes.Buffer)
+	Close(*Op, io.Writer)
 }
 
 func inlineWriterByType(t string) InlineWriter {
@@ -227,12 +237,31 @@ func (as *AttrState) Pop(s string) {
 	}
 }
 
-func writeClasses(cl []string, buf *bytes.Buffer) {
-	if len(cl) > 0 {
-		buf.WriteString(" class=")
-		buf.WriteString(strconv.Quote(strings.Join(cl, " ")))
+func AttrsToClasses(attrs map[string]string) (classes []string) {
+	for k, v := range attrs {
+		switch k {
+		case "align":
+			classes = append(classes, "text-align-"+v)
+		}
 	}
+	return
 }
+
+//var attrClasses = [...]string{"align"}
+
+func ClassesList(cl []string) (classAttr string) {
+	if len(cl) > 0 {
+		classAttr = " class=" + strconv.Quote(strings.Join(cl, " "))
+	}
+	return
+}
+
+//func writeClasses(cl []string, buf *bytes.Buffer) {
+//	if len(cl) > 0 {
+//		buf.WriteString(" class=")
+//		buf.WriteString(strconv.Quote(strings.Join(cl, " ")))
+//	}
+//}
 
 func extractString(v interface{}) string {
 	switch val := v.(type) {

@@ -12,21 +12,25 @@ func (tw *textWriter) Write(o *Op, tempBuf *bytes.Buffer) {
 	tempBuf.WriteString(o.Data)
 }
 
-func (tw *textWriter) TagName(o *Op) string {
-	return "p"
+func (tw *textWriter) Open(o *Op, as *AttrState) string {
+	return "<p" + ClassesList(AttrsToClasses(o.Attrs)) + ">"
 }
 
-func (tw *textWriter) SetClass(class string) {
-	for _, c := range tw.classes {
-		// Avoiding adding a class twice.
-		if c == class {
-			return
-		}
-	}
-	tw.classes = append(tw.classes, class)
+func (tw *textWriter) Close(o *Op, as *AttrState) string {
+	return "</p>"
 }
 
-func (tw *textWriter) GetClasses() []string {
+//func (tw *textWriter) setClass(class string) {
+//	for _, c := range tw.classes {
+//		// Avoiding adding a class twice.
+//		if c == class {
+//			return
+//		}
+//	}
+//	tw.classes = append(tw.classes, class)
+//}
+
+func (tw *textWriter) Classes() []string {
 	return tw.classes
 }
 
