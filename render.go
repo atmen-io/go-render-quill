@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 )
@@ -20,7 +21,7 @@ func Render(ops []byte) ([]byte, error) {
 // may define an InlineWriter for certain types of inline attributes. Neither of these two functions must always have to give
 // a non-nil value. The provided value will be used (and override the default functionality) only if it is not nil.
 // The returned byte slice is the rendered HTML.
-func RenderExtended(ops []byte, bws func(string) BlockWriter, aws func(string) InlineWriter) ([]byte, error) {
+func RenderExtended(ops []byte, bws func(blockType string) BlockWriter, aws func(attrType string) InlineWriter) ([]byte, error) {
 
 	var ro []map[string]interface{}
 	err := json.Unmarshal(ops, &ro)
@@ -28,13 +29,13 @@ func RenderExtended(ops []byte, bws func(string) BlockWriter, aws func(string) I
 		return nil, err
 	}
 
-	// attrStates lists the tags currently open in the order in which they were opened.
 	var (
-		attrStates = make([]string, 0, 2)
-		html       = new(bytes.Buffer)
-		tempBuf    = new(bytes.Buffer)
-		o          *Op
-		bw         BlockWriter
+		//attrStates = make([]string, 0, 2) // the tags currently open in the order in which they were opened
+		attrs   = new(AttrState)
+		html    = new(bytes.Buffer) // the final output
+		tempBuf = new(bytes.Buffer) // temporary buffer reused for each block element
+		o       *Op
+		bw      BlockWriter
 	)
 
 	for i := range ro {
@@ -55,7 +56,7 @@ func RenderExtended(ops []byte, bws func(string) BlockWriter, aws func(string) I
 			return html.Bytes(), fmt.Errorf("no type handler found for op %q", ro[i])
 		}
 
-		o.ClosePrevAttrs(tempBuf, attrStates)
+		o.closePrevAttrs(tempBuf, attrs)
 
 		// Close the last block element, open a new one, and write the inner body of the new block element
 		// only when the "\n" of the new block element is reached.
@@ -65,25 +66,12 @@ func RenderExtended(ops []byte, bws func(string) BlockWriter, aws func(string) I
 
 			for i := range split {
 
-				setUpClasses(o, bw, aws)
-
-				tn := bw.TagName(o)
-
-				// Some block elements have no closing tag (images, for example) but write everything in the body.
-				if tn != "" {
-					html.WriteString("<")
-					html.WriteString(tn)
-					writeClasses(bw.GetClasses(), html)
-				}
+				bw.Open(o, attrs)
 
 				html.Write(tempBuf.Bytes())
 				html.WriteString(split[i])
 
-				if tn != "" {
-					html.WriteString("</")
-					html.WriteString(tn)
-					html.WriteString(">")
-				}
+				bw.Close(o, attrs)
 
 				tempBuf.Reset()
 
@@ -114,9 +102,9 @@ func (o *Op) HasAttr(attr string) bool {
 
 // ClosePrev checks if the previous Op opened any attribute tags that are not supposed to be set on the current Op and closes
 // those tags in the opposite order in which they were opened.
-func (o *Op) ClosePrevAttrs(buf *bytes.Buffer, st []string) {
-	for i := len(st) - 1; i >= 0; i-- { // Start with the last attribute opened.
-		if !o.HasAttr(st[i]) {
+func (o *Op) closePrevAttrs(buf *bytes.Buffer, st *AttrState) {
+	for i := len(st.t) - 1; i >= 0; i-- { // Start with the last attribute opened.
+		if !o.HasAttr(st.t[i]) {
 		}
 	}
 }
@@ -163,14 +151,9 @@ func rawOpToOp(ro map[string]interface{}) (*Op, error) {
 // main buffer only after the "\n" character terminating the block is reached (the Op with the "\n" character holds the information
 // about the block element).
 type BlockWriter interface {
-	TagName(o *Op) string
-	SetClass(string)
-	GetClasses() []string
-	Write(*Op, *bytes.Buffer)
-}
-
-type BlockData struct {
-	TagName string
+	Open(*Op, *AttrState)
+	Close(*Op, *AttrState)
+	Write(*Op, io.Writer)
 }
 
 func blockWriterByType(t string) BlockWriter {
@@ -185,11 +168,15 @@ func blockWriterByType(t string) BlockWriter {
 	return nil
 }
 
+//type InlineWriter interface {
+//	TagName() string
+//	Write(*Op, *bytes.Buffer)
+//}
+
 type InlineWriter interface {
-	TagName() string
-	SetClass(string)
-	GetClasses() []string
-	Write(*Op, *bytes.Buffer)
+	//Attr() string // the attribute key that identifies this inline format
+	Open(*Op, *AttrState)
+	Close(*Op, *bytes.Buffer)
 }
 
 func inlineWriterByType(t string) InlineWriter {
@@ -219,6 +206,24 @@ func setUpClasses(o *Op, bw BlockWriter, aws func(string) InlineWriter) {
 			//return html.Bytes(), fmt.Errorf("no type handler found for op %q", ro[i])
 			return
 		}
+	}
+}
+
+type AttrState struct {
+	t    []string  // the list of currently open attribute tags
+	temp io.Writer // the temporary buffer (for the block element)
+}
+
+// Add adds an inline attribute state to the end of the list of open states.
+func (as *AttrState) Add(s string) {
+	as.t = append(as.t, s)
+	as.temp.Write([]byte(s))
+}
+
+// Pop removes the last attribute state from the list of states if the last is s.
+func (as *AttrState) Pop(s string) {
+	if as.t[len(as.t)-1] == s {
+		as.t = as.t[:len(as.t)-1]
 	}
 }
 
