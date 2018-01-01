@@ -12,7 +12,7 @@ func (*blockQuoteFormat) TagName() string { return "blockquote" }
 
 func (*blockQuoteFormat) Class() string { return "" }
 
-type headerFormat struct{
+type headerFormat struct {
 	h string // the string "h1", "h2", ...
 }
 
@@ -20,7 +20,7 @@ func (hf *headerFormat) TagName() string { return hf.h }
 
 func (*headerFormat) Class() string { return "" }
 
-type listFormat struct{
+type listFormat struct {
 	lType string // either "ul" or "ol"
 }
 

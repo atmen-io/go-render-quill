@@ -21,7 +21,7 @@ func Render(ops []byte) ([]byte, error) {
 // may define an InlineWriter for certain types of inline attributes. Neither of these two functions must always have to give
 // a non-nil value. The provided value will be used (and override the default functionality) only if it is not nil.
 // The returned byte slice is the rendered HTML.
-func RenderExtended(ops []byte, customFormats func(*Op) Formatter) ([]byte, error) {
+func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) ([]byte, error) {
 
 	var raw []rawOp
 	err := json.Unmarshal(ops, &raw)
@@ -47,13 +47,6 @@ func RenderExtended(ops []byte, customFormats func(*Op) Formatter) ([]byte, erro
 			return nil, err
 		}
 
-		fm = o.getFormatter(customFormats)
-		if fm == nil {
-			return html.Bytes(), fmt.Errorf("no formatter found for op %q", raw[i])
-		}
-
-		o.closePrevAttrs(tempBuf, attrs)
-
 		// Open the last block element, write its body and close it to move on only when the "\n" of the
 		// last block element is reached.
 		if strings.IndexByte(o.Data, '\n') != -1 {
@@ -68,13 +61,10 @@ func RenderExtended(ops []byte, customFormats func(*Op) Formatter) ([]byte, erro
 						Attrs: o.Attrs,
 						// Type:
 					}
-					oi.getFormatter(customFormats)
-					oi.write(tempBuf)
+					oi.write(tempBuf *bytes.Buffer, fm Formatter)
 				}
 
 				//bw.Open(o, attrs)
-
-				o.write()
 
 				html.Write(tempBuf.Bytes())
 				html.WriteString(split[i])
@@ -85,7 +75,24 @@ func RenderExtended(ops []byte, customFormats func(*Op) Formatter) ([]byte, erro
 
 		} else {
 
-			tempBuf.WriteString(o.Data)
+			o.closePrevAttrs(tempBuf, attrs)
+
+			fm = o.getFormatter(o.Type, customFormats)
+			if fm != nil {
+
+				//return html.Bytes(), fmt.Errorf("no formatter found for op %q", raw[i])
+			}
+
+			for attr := range o.Attrs {
+				fm = o.getFormatter(attr, customFormats)
+				if fm != nil {
+					if bw, ok := fm.(BodyWriter) {
+						bw.Write(tempBuf)
+					} else {
+						tempBuf.WriteString(o.Data)
+					}
+				}
+			}
 
 		}
 
@@ -102,7 +109,7 @@ type Op struct {
 }
 
 func (o *Op) write(buf *bytes.Buffer, fm Formatter) {
-	if fm.TagName(o) != "" {
+	if fm.TagName() != "" {
 		buf.WriteString("<")
 		buf.WriteString(fm.TagName())
 		buf.WriteString(">")
@@ -134,7 +141,7 @@ func (o *Op) getFormatter(keyword string, customFormats func(string, *Op) Format
 		return new(textFormat)
 	case "header":
 		return &headerFormat{
-			h: "h"+o.Attrs["header"],
+			h: "h" + o.Attrs["header"],
 		}
 	case "list":
 		var lt string
@@ -148,6 +155,12 @@ func (o *Op) getFormatter(keyword string, customFormats func(string, *Op) Format
 		}
 	case "blockquote":
 		return new(blockQuoteFormat)
+	case "image":
+		return new(imageFormat)
+	case "bold":
+		return new(boldFormat)
+	case "italic":
+		return new(italicFormat)
 	}
 
 	return nil
@@ -180,47 +193,16 @@ func (o *Op) OpenAttrs(buf *bytes.Buffer) {
 //	//Write(*Op, io.Writer)
 //}
 
-//func blockWriterByType(t string) BlockWriter {
-//	switch t {
-//	case "text":
-//		return new(textWriter)
-//	case "blockquote":
-//		return new(blockQuoteWriter)
-//	case "header":
-//		return new(headerWriter)
-//	case "list":
-//		return new(listWriter)
-//	}
-//	return nil
-//}
-
-//type InlineWriter interface {
-//	TagName() string
-//	Write(*Op, *bytes.Buffer)
-//}
-
 type Formatter interface {
 	TagName() string // Optionally wrap the element with the tag (return empty string for no wrap).
 	Class() string   // Optionally give a CSS class to set (return empty string for no class).
 }
 
-//type InlineWriter interface {
-//	//Attr() string // the attribute key that identifies this inline format
-//	Open(*Op, *AttrState)
-//	Close(*Op, io.Writer)
-//}
-
-//func inlineWriterByType(t string) Formatter {
-//	switch t {
-//	case "bold":
-//		return new(boldWriter)
-//	case "image":
-//		return new(imageWriter)
-//	case "italic":
-//		return new(italicWriter)
-//	}
-//	return nil
-//}
+// A Formatter may also be a BodyWriter if it wishes to write the body of the Op in some custom way (useful for embeds).
+type BodyWriter interface {
+	Formatter
+	Write(io.Writer) // Write the body of the element.
+}
 
 //func setUpClasses(o *Op, bw BlockWriter, aws func(string) InlineWriter) {
 //	var ar InlineWriter
