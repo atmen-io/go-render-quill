@@ -63,19 +63,23 @@ func RenderExtended(ops []byte, bws func(string) BlockWriter, aws func(string) I
 
 				setUpClasses(o, bw, aws)
 
-				if bw.TagName(o) != "" {
+				tn := bw.TagName(o)
+
+				// Some block elements have no closing tag (images, for example) but write everything in the body.
+				if tn != "" {
 					html.WriteString("<")
-					html.WriteString(bw.TagName(o))
+					html.WriteString(tn)
 					writeClasses(bw.GetClasses(), html)
 				}
 
+				html.Write(tempBuf.Bytes())
 				html.WriteString(split[i])
 
-				html.WriteString("</")
-				html.WriteString(bw.TagName(o))
-				html.WriteString(">")
-
-				html.Write(tempBuf.Bytes())
+				if tn != "" {
+					html.WriteString("</")
+					html.WriteString(tn)
+					html.WriteString(">")
+				}
 
 				tempBuf.Reset()
 
