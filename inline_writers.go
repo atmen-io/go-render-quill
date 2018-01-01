@@ -5,36 +5,7 @@ import (
 	"strconv"
 )
 
-type textWriter struct {
-	classes []string
-}
-
-func (tw *textWriter) Write(o *Op, buf *bytes.Buffer) {
-
-
-
-	buf.WriteString("<p>")
-	buf.WriteString(o.Data)
-
-}
-
-func (tw *textWriter) TagName() string {
-	return "p"
-}
-
-func (tw *textWriter) SetClass(class string) {
-	for _, c := range tw.classes {
-		// Avoiding adding a class twice.
-		if c == class {
-			return
-		}
-	}
-	tw.classes = append(tw.classes, class)
-}
-
-func (tw *textWriter) GetClasses() []string {
-	return tw.classes
-}
+type boldWriter struct{}
 
 type imageWriter struct {
 	classes []string
@@ -64,6 +35,12 @@ func (iw *imageWriter) Write(o *Op, buf *bytes.Buffer) {
 
 	buf.WriteString("<img src=")
 	buf.WriteString(strconv.Quote(o.Data))
+	if o.Attrs["alt"] != "" {
+		buf.WriteString(" alt=")
+		buf.WriteString(strconv.Quote(o.Attrs["alt"]))
+	}
 	buf.WriteString(">")
 
 }
+
+type italicWriter struct{}
