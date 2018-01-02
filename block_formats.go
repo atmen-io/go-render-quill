@@ -2,41 +2,26 @@ package quill
 
 type textFormat struct{}
 
-func (*textFormat) TagName() string { return "p" }
-
-func (*textFormat) Class() string { return "" }
-
-func (*textFormat) Style() string { return "" }
+func (*textFormat) Format() (string, StyleFormat) { return "p", Tag }
 
 type blockQuoteFormat struct{}
 
-func (*blockQuoteFormat) TagName() string { return "blockquote" }
-
-func (*blockQuoteFormat) Class() string { return "" }
-
-func (*blockQuoteFormat) Style() string { return "" }
+func (*blockQuoteFormat) Format() (string, StyleFormat) { return "blockquote", Tag }
 
 type headerFormat struct {
 	h string // the string "h1", "h2", ...
 }
 
-func (hf *headerFormat) TagName() string { return hf.h }
-
-func (*headerFormat) Class() string { return "" }
-
-func (*headerFormat) Style() string { return "" }
+func (hf *headerFormat) Format() (string, StyleFormat) { return hf.h, Tag }
 
 type listFormat struct {
 	lType  string // either "ul" or "ol"
 	indent uint8  // the number of nested
 }
 
-func (lf *listFormat) TagName() string { return "li" }
+func (lf *listFormat) Format() (string, StyleFormat) { return "li", Tag }
 
-func (*listFormat) Class() string { return "" }
-
-func (*listFormat) Style() string { return "" }
-
+// listFormat implements the FormatWrapper interface.
 func (lf *listFormat) Wrap(openedTags []string) string {
 	var count uint8
 	for i := range openedTags {

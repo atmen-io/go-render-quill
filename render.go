@@ -15,11 +15,9 @@ func Render(ops []byte) ([]byte, error) {
 	return RenderExtended(ops, nil)
 }
 
-// RenderExtended takes the Delta array of insert operations and, optionally, a function that provides a BlockWriter for block
-// elements (text, header, blockquote, etc.) to customize how those elements are rendered, and, optionally, a function that
-// may define an InlineWriter for certain types of inline attributes. Neither of these two functions must always have to give
-// a non-nil value. The provided value will be used (and override the default functionality) only if it is not nil.
-// The returned byte slice is the rendered HTML.
+// RenderExtended takes the Delta array of insert operations and, optionally, a function that may provide a Formatter to
+// customize the way certain kinds of inserts are rendered. If the given Formatter is nil, then the default one that is built
+// in is used. The returned byte slice is the rendered HTML.
 func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) ([]byte, error) {
 
 	var raw []rawOp
@@ -49,7 +47,7 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) ([]by
 		}
 
 		// If the op has a Write method defined (based on its type of attributes), we just write the body.
-		if bw, ok := fm.(BodyWriter); ok {
+		if bw, ok := fm.(FormatWriter); ok {
 			bw.Write(tempBuf)
 			continue
 		}
@@ -235,8 +233,7 @@ func (o *Op) closePrevAttrs(buf *bytes.Buffer, fs *formatState, customFormats fu
 // The returned
 func (o *Op) addAttr(fs *formatState, fm Formatter, buf *bytes.Buffer) {
 
-	var f format // reused in the loop for convenience
-	var tagsList []string
+	var tagsList []string // the currently open tags (used by WrappedFormatter)
 	fVal, fPlace := fm.Format()
 
 	// Check that the place where the format is supposed to be is valid.
@@ -246,20 +243,15 @@ func (o *Op) addAttr(fs *formatState, fm Formatter, buf *bytes.Buffer) {
 
 	// Check if this format is already opened.
 	for i := range fs.open {
-		f = fs.open[i]
-		if f.place == Tag {
-			if f.val == fVal {
-				return
-			}
-			tagsList = append(tagsList, f.val)
-		} else if f.place == Class && f.val == fVal {
+		if fs.open[i].place == fPlace && fs.open[i].val == fVal {
 			return
-		} else if f.place == Style && f.val == fVal {
-			return
+		}
+		if fs.open[i].place == Tag {
+			tagsList = append(tagsList, fs.open[i].val)
 		}
 	}
 
-	if wf, ok := fm.(WrappedFormatter); ok {
+	if wf, ok := fm.(FormatWrapper); ok {
 		if outer := wf.Wrap(tagsList); outer != "" {
 			fs.add(format{
 				val:   outer,
@@ -293,32 +285,6 @@ func (o *Op) addAttr(fs *formatState, fm Formatter, buf *bytes.Buffer) {
 
 }
 
-//func (o *Op) startOp(buf *bytes.Buffer, customFormats func(string, *Op) Formatter, fs formatState) {
-//
-//	o.closePrevAttrs(buf, fs)
-//
-//	for i := range fs.open {
-//
-//		id := fs.open[i].Ident
-//
-//		fm := o.getFormatter(id, customFormats)
-//
-//		if !fm.HasSet(o, id) {
-//			fs.close(id)
-//		}
-//
-//	}
-//
-//	for attr := range o.Attrs {
-//
-//		fm := o.getFormatter(attr, customFormats)
-//
-//		fs.add()
-//
-//	}
-//
-//}
-
 // An OpHandler takes the previous Op (which is nil if the current Op is the first) and the current Op and writes the
 // current Op to buf. Each handler should check the previous Op to see if it has attributes that are not set on the current
 // Op and close the appropriate HTML tags before writing the current Op; also the handler should not needlessly open up a
@@ -341,34 +307,17 @@ type Formatter interface {
 	Format() (string, StyleFormat) // Format gives the string to write and where to place it.
 }
 
-// A Formatter may also be a FormatterWriter if it wishes to write the body of the Op in some custom way (useful for embeds).
-type FormatterWriter interface {
+// A Formatter may also be a FormatWriter if it wishes to write the body of the Op in some custom way (useful for embeds).
+type FormatWriter interface {
 	Formatter
 	Write(io.Writer) // Write the body of the element.
 }
 
-type WrappedFormatter interface {
+// A FormatWrapper wraps text in additional HTML tags (such as "ul" for lists).
+type FormatWrapper interface {
 	Formatter
 	Wrap([]string) string // give Wrap a list of opened tag names and it'll say what tag, if anything, should be written
 }
-
-//func setUpClasses(o *Op, bw BlockWriter, aws func(string) InlineWriter) {
-//	var ar InlineWriter
-//	for attr := range o.Attrs {
-//		if aws != nil {
-//			if custom := aws(attr); custom != nil {
-//				ar = custom
-//			}
-//		} else {
-//			ar = inlineWriterByType(attr)
-//		}
-//		if ar == nil {
-//			// This attribute type is unknown.
-//			//return html.Bytes(), fmt.Errorf("no type handler found for op %q", ro[i])
-//			return
-//		}
-//	}
-//}
 
 type format struct {
 	val   string
@@ -392,16 +341,8 @@ func (fs *formatState) close(f format) {
 	}
 }
 
-//func AttrToClass(key, val string) (classes []string) {
-//	for k, v := range attrs {
-//		switch k {
-//		case "align":
-//			classes = append(classes, "text-align-"+v)
-//		}
-//	}
-//	return
-//}
-
+// If cl has something, then ClassesList returns the class attribute to add to an HTML element with a space before the
+// "class" attribute and spaces between each class name.
 func ClassesList(cl []string) (classAttr string) {
 	if len(cl) > 0 {
 		classAttr = " class=" + strconv.Quote(strings.Join(cl, " "))
@@ -423,10 +364,3 @@ func closeTagOrNot(buf *bytes.Buffer, s string) {
 		buf.WriteByte('>')
 	}
 }
-
-//func writeClasses(cl []string, buf *bytes.Buffer) {
-//	if len(cl) > 0 {
-//		buf.WriteString(" class=")
-//		buf.WriteString(strconv.Quote(strings.Join(cl, " ")))
-//	}
-//}
