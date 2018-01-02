@@ -116,7 +116,7 @@ func (o *Op) writeBlock(fs *formatState, buf *bytes.Buffer, customFormats func(s
 		if bw, ok := attrFm.(BodyWriter); ok {
 			bw.Write(buf)
 		}
-		if !blockOpen && o.maybeAddAttr(fs, attrFm, buf) {
+		if !blockOpen && o.addAttr(fs, attrFm, buf) {
 			blockOpen = true
 		}
 	}
@@ -230,37 +230,40 @@ func (o *Op) closePrevAttrs(buf *bytes.Buffer, fs *formatState, customFormats fu
 	}
 }
 
-// maybeAddAttr adds an format that the string that will be written to buf right after this will have.
+// addAttr adds an format that the string that will be written to buf right after this will have.
 // The format is written only if it is not already opened up earlier.
 // The returned
-func (o *Op) maybeAddAttr(fs *formatState, fm Formatter, buf *bytes.Buffer) {
+func (o *Op) addAttr(fs *formatState, fm Formatter, buf *bytes.Buffer) {
 
-	var (
-		f        format // reused in the loop for convenience
-		tn       = fm.TagName()
-		cl       = fm.Class()
-		stl      = fm.Style()
-		tagsList []string
-	)
+	var f format // reused in the loop for convenience
+	var tagsList []string
+	fVal, fPlace := fm.Format()
 
+	// Check that the place where the format is supposed to be is valid.
+	if fPlace < 0 || fPlace > 2 {
+		return
+	}
+
+	// Check if this format is already opened.
 	for i := range fs.open {
 		f = fs.open[i]
-		if f.tagName != "" {
-			if f.tagName == tn {
+		if f.place == Tag {
+			if f.val == fVal {
 				return
 			}
-			tagsList = append(tagsList, f.tagName)
-		} else if f.class != "" && f.class == cl {
+			tagsList = append(tagsList, f.val)
+		} else if f.place == Class && f.val == fVal {
 			return
-		} else if f.style != "" && f.style == stl {
+		} else if f.place == Style && f.val == fVal {
 			return
 		}
 	}
 
-	if wf, ok := fm.(WrappedFormat); ok {
+	if wf, ok := fm.(WrappedFormatter); ok {
 		if outer := wf.Wrap(tagsList); outer != "" {
 			fs.add(format{
-				tagName: outer,
+				val:   outer,
+				place: Tag,
 			})
 			buf.WriteByte('<')
 			buf.WriteString(outer)
@@ -268,28 +271,25 @@ func (o *Op) maybeAddAttr(fs *formatState, fm Formatter, buf *bytes.Buffer) {
 		}
 	}
 
-	if tn != "" {
-		fs.add(format{
-			tagName: tn,
-		})
-		buf.WriteByte('<')
-		buf.WriteString(tn)
-		buf.WriteByte('>')
-	} else if cl != "" {
-		fs.add(format{
-			class: cl,
-		})
+	fs.add(format{
+		val:   fVal,
+		place: fPlace,
+	})
+
+	buf.WriteByte('<')
+
+	switch fPlace {
+	case Tag:
+		buf.WriteString(fVal)
+	case Class:
 		buf.WriteString("<span class=")
-		buf.WriteString(strconv.Quote(cl))
-		buf.WriteByte('>')
-	} else if stl != "" {
-		fs.add(format{
-			style: stl,
-		})
+		buf.WriteString(strconv.Quote(fVal))
+	case Style:
 		buf.WriteString("<span style=")
-		buf.WriteString(strconv.Quote(stl))
-		buf.WriteByte('>')
+		buf.WriteString(strconv.Quote(fVal))
 	}
+
+	buf.WriteByte('>')
 
 }
 
@@ -328,22 +328,26 @@ func (o *Op) maybeAddAttr(fs *formatState, fm Formatter, buf *bytes.Buffer) {
 // main buffer only after the "\n" character terminating the block is reached (the Op with the "\n" character holds the information
 // about the block element).
 
+// A StyleFormat is either an HTML tag name, a CSS class, or a style attribute value.
+type StyleFormat uint8
+
+const (
+	Tag StyleFormat = iota
+	Class
+	Style
+)
+
 type Formatter interface {
-	TagName() string // Optionally wrap the element with the tag (return empty string for no wrap).
-	Class() string   // Optionally give a CSS class to set (return empty string for no class).
-	Style() string   // Optionally set a style attribute; must be blank or just the style key & prop with semicolon at the end.
-	//HasSet(*Op, string) bool // Says if the Op has the attribute with the identifier set.
-	// Pre(*AttrState)
-	// Post(*AttrState)
+	Format() (string, StyleFormat) // Format gives the string to write and where to place it.
 }
 
-// A Formatter may also be a BodyWriter if it wishes to write the body of the Op in some custom way (useful for embeds).
-type BodyWriter interface {
+// A Formatter may also be a FormatterWriter if it wishes to write the body of the Op in some custom way (useful for embeds).
+type FormatterWriter interface {
 	Formatter
 	Write(io.Writer) // Write the body of the element.
 }
 
-type WrappedFormat interface {
+type WrappedFormatter interface {
 	Formatter
 	Wrap([]string) string // give Wrap a list of opened tag names and it'll say what tag, if anything, should be written
 }
@@ -367,7 +371,8 @@ type WrappedFormat interface {
 //}
 
 type format struct {
-	tagName, class, style string // First two things are optional.
+	val   string
+	place StyleFormat
 }
 
 type formatState struct {
