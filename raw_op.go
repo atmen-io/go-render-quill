@@ -11,31 +11,36 @@ type rawOp struct {
 }
 
 // makeOp takes a raw Delta op as extracted from the JSON and turns it into an Op to make it usable for rendering.
-func (ro *rawOp) makeOp() (*Op, error) {
+func (ro *rawOp) makeOp(o *Op) error {
 	if ro.Insert == nil {
-		return nil, fmt.Errorf("op %q lacks an insert", ro)
+		return fmt.Errorf("op %q lacks an insert", ro)
 	}
-	o := new(Op)
 	if str, ok := ro.Insert.(string); ok {
 		// This op is a simple string insert.
 		o.Data = str
 		o.Type = "text"
 	} else if mapStrIntf, ok := ro.Insert.(map[string]interface{}); ok {
 		if _, ok = mapStrIntf["insert"]; !ok {
-			return nil, fmt.Errorf("op %q lacks an insert", ro)
+			return fmt.Errorf("op %q lacks an insert", ro)
 		}
+		// There should be only one item in the map (the element's key being the insert type).
 		for mk := range mapStrIntf {
-			ins := make(map[string]string)
-			ins[mk] = extractString(mapStrIntf[mk])
+			o.Type = mk
+			o.Data = extractString(mapStrIntf[mk])
+			break
 		}
 	}
 	if ro.Attrs != nil {
-		o.Attrs = make(map[string]string, len(ro.Attrs))
-		for attr := range ro.Attrs {
+		for attr := range ro.Attrs { // the map was already made
 			o.Attrs[attr] = extractString(ro.Attrs[attr])
 		}
+	} else {
+		// Clear the map for later reuse.
+		for k := range o.Attrs {
+			delete(o.Attrs, k)
+		}
 	}
-	return o, nil
+	return nil
 }
 
 func extractString(v interface{}) string {

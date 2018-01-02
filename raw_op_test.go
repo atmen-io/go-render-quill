@@ -86,4 +86,7 @@ func TestExtractString(t *testing.T) {
 	if extractString(false) != "" {
 		t.Errorf("failed bool false extract")
 	}
+	if extractString(float64(3)) != "3" {
+		t.Errorf("failed float64 extract")
+	}
 }

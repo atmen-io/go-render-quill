@@ -30,14 +30,15 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) ([]by
 		html    = new(bytes.Buffer) // the final output
 		tempBuf = new(bytes.Buffer) // temporary buffer reused for each block element
 		fs      = new(formatState)  // the tags currently open in the order in which they were opened
-		o       *Op
+		o       = new(Op)           // allocate memory for an Op to reuse for all iterations
 		fm      Formatter
 	)
 
+	o.Attrs = make(map[string]string, 3) // initialize once here only
+
 	for i := range raw {
 
-		o, err = raw[i].makeOp()
-		if err != nil {
+		if err = raw[i].makeOp(o); err != nil {
 			return nil, err
 		}
 
@@ -95,31 +96,29 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) ([]by
 
 type Op struct {
 	Data  string            // the text to insert or the value of the embed object (http://quilljs.com/docs/delta/#embeds)
-	Type  string            // the type of the op (typically "string", but you can register any other type)
+	Type  string            // the type of the op (typically "text", but any other type can be registered)
 	Attrs map[string]string // key is attribute name; value is either value string or "y" (meaning true) or "n" (meaning false)
 }
 
+// writeBlock writes a block element (which may be nested inside another block element if it is a FormatWrapper).
+// The opening HTML tag of a block element is written to the main buffer only after the "\n" character terminating the
+// block is reached (the Op with the "\n" character holds the information about the block element).
 func (o *Op) writeBlock(fs *formatState, buf *bytes.Buffer, customFormats func(string, *Op) Formatter) []byte {
 
 	o.closePrevAttrs(buf, fs, customFormats)
 
 	// Open the tag for the Op if the Op has a format that uses tags.
-	blockOpen := openTagOrNot(buf, fm.TagName())
+	openTagOrNot(buf, fm.TagName())
 
 	for attr := range o.Attrs {
 		attrFm := o.getFormatter(attr, customFormats)
 		if attrFm == nil {
 			continue // not returning an error
 		}
-		if bw, ok := attrFm.(BodyWriter); ok {
+		if bw, ok := attrFm.(FormatWriter); ok {
 			bw.Write(buf)
 		}
-		if !blockOpen && o.addAttr(fs, attrFm, buf) {
-			blockOpen = true
-		}
-	}
-
-	if !blockOpen {
+		o.addAttr(fs, attrFm, buf)
 	}
 
 	if fm.TagName() != "" {
@@ -147,7 +146,7 @@ func (o *Op) writeInline(fs *formatState, buf *bytes.Buffer, customFormats func(
 	for attr := range o.Attrs {
 		fm = o.getFormatter(attr, customFormats)
 		if fm != nil {
-			if bw, ok := fm.(BodyWriter); ok {
+			if bw, ok := fm.(FormatWriter); ok {
 				bw.Write(buf)
 				break
 			} else {
@@ -161,8 +160,8 @@ func (o *Op) writeInline(fs *formatState, buf *bytes.Buffer, customFormats func(
 }
 
 // HasAttr says if the Op is not nil and either has the attribute set to a non-blank value.
-func (o *Op) HasAttr(attr, val string) bool {
-	return o != nil && (o.Attrs[attr] != "" || o.Attrs[attr] != val)
+func (o *Op) HasAttr(attr string) bool {
+	return o != nil && o.Attrs[attr] != ""
 }
 
 // getFormatter returns a formatter based on the keyword (either "text" or "" or an attribute name) and the Op settings.
@@ -175,7 +174,7 @@ func (o *Op) getFormatter(keyword string, customFormats func(string, *Op) Format
 		}
 	}
 
-	switch keyword {
+	switch keyword { // This is the list of currently recognized "keywords".
 	case "text":
 		return new(textFormat)
 	case "header":
@@ -197,6 +196,8 @@ func (o *Op) getFormatter(keyword string, customFormats func(string, *Op) Format
 		return new(blockQuoteFormat)
 	case "image":
 		return new(imageFormat)
+	case "link":
+		return new(linkFormat)
 	case "bold":
 		return new(boldFormat)
 	case "italic":
@@ -213,16 +214,35 @@ func (o *Op) getFormatter(keyword string, customFormats func(string, *Op) Format
 // those tags in the opposite order in which they were opened.
 func (o *Op) closePrevAttrs(buf *bytes.Buffer, fs *formatState, customFormats func(string, *Op) Formatter) {
 	var f format                             // reused in the loop for convenience
+	var tagsList []string                    // the currently open tags (used by WrappedFormatter)
 	for i := len(fs.open) - 1; i >= 0; i-- { // Start with the last attribute opened.
 
 		f = fs.open[i]
 
-		if f.tagName != "" {
+		if f.place == Tag {
+			tagsList = append(tagsList, f.val)
+		}
 
-		} else if f.class != "" {
+		fmter := o.getFormatter(f.keyword, customFormats)
+		if fmter == nil {
+			continue // Really this should never be the case.
+		}
 
-		} else if f.style != "" {
+		fVal, fPlace := fmter.Format()
 
+		if f.place == fPlace && f.val == fVal {
+		}
+
+		if fw, ok := fmter.(FormatWrapper); ok {
+			if outer := fw.PostWrap(tagsList, o); outer != "" {
+				fs.add(format{
+					val:   outer,
+					place: Tag,
+				})
+				buf.WriteByte('<')
+				buf.WriteString(outer)
+				buf.WriteByte('>')
+			}
 		}
 
 	}
@@ -230,7 +250,6 @@ func (o *Op) closePrevAttrs(buf *bytes.Buffer, fs *formatState, customFormats fu
 
 // addAttr adds an format that the string that will be written to buf right after this will have.
 // The format is written only if it is not already opened up earlier.
-// The returned
 func (o *Op) addAttr(fs *formatState, fm Formatter, buf *bytes.Buffer) {
 
 	var tagsList []string // the currently open tags (used by WrappedFormatter)
@@ -251,8 +270,8 @@ func (o *Op) addAttr(fs *formatState, fm Formatter, buf *bytes.Buffer) {
 		}
 	}
 
-	if wf, ok := fm.(FormatWrapper); ok {
-		if outer := wf.Wrap(tagsList); outer != "" {
+	if fw, ok := fm.(FormatWrapper); ok {
+		if outer := fw.PreWrap(tagsList); outer != "" {
 			fs.add(format{
 				val:   outer,
 				place: Tag,
@@ -285,14 +304,9 @@ func (o *Op) addAttr(fs *formatState, fm Formatter, buf *bytes.Buffer) {
 
 }
 
-// An OpHandler takes the previous Op (which is nil if the current Op is the first) and the current Op and writes the
-// current Op to buf. Each handler should check the previous Op to see if it has attributes that are not set on the current
-// Op and close the appropriate HTML tags before writing the current Op; also the handler should not needlessly open up a
-// tag for an attribute if it was already opened for the previous Op. This ensures that the rendered HTML is lean.
-
-// A BlockWriter defines how an insert of block type gets rendered. The opening HTML tag of a block element is written to the
-// main buffer only after the "\n" character terminating the block is reached (the Op with the "\n" character holds the information
-// about the block element).
+// Each handler should check the previous Op to see if it has attributes that are not set on the current Op and close the
+// appropriate HTML tags before writing the current Op; also the handler should not needlessly open up a  tag for an
+// attribute if it was already opened for the previous Op. This ensures that the rendered HTML is lean.
 
 // A StyleFormat is either an HTML tag name, a CSS class, or a style attribute value.
 type StyleFormat uint8
@@ -305,28 +319,30 @@ const (
 
 type Formatter interface {
 	Format() (string, StyleFormat) // Format gives the string to write and where to place it.
+	//HasFormat(*Op, []string) bool // Given the current Op and a list of currently open tags, say if the Op needs the format set.
 }
 
 // A Formatter may also be a FormatWriter if it wishes to write the body of the Op in some custom way (useful for embeds).
 type FormatWriter interface {
 	Formatter
-	Write(io.Writer) // Write the body of the element.
+	Write(io.Writer) // Write the entire body of the element.
 }
 
 // A FormatWrapper wraps text in additional HTML tags (such as "ul" for lists).
 type FormatWrapper interface {
 	Formatter
-	Wrap([]string) string // give Wrap a list of opened tag names and it'll say what tag, if anything, should be written
+	PreWrap([]string) string       // Give Wrap a list of opened tag names and it'll say what tag name, if anything, should be written.
+	PostWrap([]string, *Op) string // Give it the current Op so it says if it's now time to close the wrap.
 }
 
 type format struct {
-	val   string
-	place StyleFormat
+	val, keyword string
+	place        StyleFormat
 }
 
 type formatState struct {
-	open []format  // the list of currently open attribute tags
-	temp io.Writer // the temporary buffer (for the block element)
+	open []format // the list of currently open attribute tags
+	//temp io.Writer // the temporary buffer (for the block element)
 }
 
 // Add adds an inline attribute state to the end of the list of open states.

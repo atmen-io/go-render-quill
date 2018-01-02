@@ -22,7 +22,7 @@ type listFormat struct {
 func (lf *listFormat) Format() (string, StyleFormat) { return "li", Tag }
 
 // listFormat implements the FormatWrapper interface.
-func (lf *listFormat) Wrap(openedTags []string) string {
+func (lf *listFormat) PreWrap(openedTags []string) string {
 	var count uint8
 	for i := range openedTags {
 		if openedTags[i] == lf.lType {
@@ -30,9 +30,17 @@ func (lf *listFormat) Wrap(openedTags []string) string {
 		}
 	}
 	if count <= lf.indent {
-		return lf.lType
+		return "<" + lf.lType + ">"
 	}
 	return ""
+}
+
+// listFormat implements the FormatWrapper interface.
+func (lf *listFormat) PostWrap(openedTags []string, o *Op) string {
+	if o.HasAttr("list") {
+		return ""
+	}
+	return "</" + lf.lType + ">" // TODO: too simplistic, check for nested lists
 }
 
 // indentDepths gives either the indent amount of a list or 0 if there is no indenting.
