@@ -41,6 +41,10 @@ var ops = []byte(`
 ]`)
 
 func Example() {
-	fmt.Println(quill.Render(ops))
+	html, err := quill.Render(ops)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(string(html))
 	// Output: <h1>Heading1</h1><p>Hello, this is text.</p><p>And <em>here is italic </em>(and not).</p><p>And <strong>here is bold</strong></p>
 }

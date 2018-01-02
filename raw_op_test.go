@@ -1,7 +1,6 @@
 package quill
 
 import (
-	"fmt"
 	"reflect"
 	"testing"
 )
@@ -10,7 +9,7 @@ func TestRawOp_makeOp(t *testing.T) {
 
 	rawOps := []rawOp{
 		{
-			Insert: "string to insert.",
+			Insert: "stuff to insert.\n",
 			Attrs: map[string]interface{}{
 				"bold":      true,
 				"link":      "https://widerwebs.com",
@@ -31,12 +30,17 @@ func TestRawOp_makeOp(t *testing.T) {
 				"blockquote": true,
 			},
 		},
+		{
+			Insert: map[string]interface{}{
+				"image": "url-or-base64",
+			},
+		},
 	}
 
 	want := []Op{
 		{
-			Data: "string to insert.\n",
-			Type: "string",
+			Data: "stuff to insert.\n",
+			Type: "text",
 			Attrs: map[string]string{
 				"bold":      "y",
 				"italic":    "",
@@ -59,18 +63,25 @@ func TestRawOp_makeOp(t *testing.T) {
 				"blockquote": "y",
 			},
 		},
+		{
+			Data: "url-or-base64",
+			Type: "image",
+			Attrs: make(map[string]string), // like in code (already initialized)
+		},
 	}
 
-	o := new(Op) // reuse in loop
+	o := new(Op)                         // reuse in loop
+	o.Attrs = make(map[string]string, 3) // initialize once here only (as in real code)
 
 	for i := range rawOps {
 
 		if err := rawOps[i].makeOp(o); err != nil {
-			fmt.Errorf("error: %s", err)
+			t.Errorf("error making Op: %s", err)
+			t.FailNow()
 		}
 
 		if !reflect.DeepEqual(*o, want[i]) {
-			t.Errorf("failed rawOpToOp; got %v for index %s", want[i], i)
+			t.Errorf("failed Op comparison; got %+v for index %d", o, i)
 		}
 
 	}

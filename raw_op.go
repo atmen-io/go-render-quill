@@ -14,7 +14,7 @@ type rawOp struct {
 func (ro *rawOp) makeOp(o *Op) error {
 
 	if ro.Insert == nil {
-		return fmt.Errorf("op %q lacks an insert", ro)
+		return fmt.Errorf("op %+v lacks an insert", ro)
 	}
 
 	switch ins := ro.Insert.(type) {
@@ -23,27 +23,27 @@ func (ro *rawOp) makeOp(o *Op) error {
 		o.Type = "text"
 		o.Data = ins
 	case map[string]interface{}:
-		if _, ok := ins["insert"]; !ok {
-			return fmt.Errorf("op %q lacks an insert", ro)
+		if len(ins) == 0 {
+			return fmt.Errorf("op %+v lacks a non-text insert", *ro)
 		}
-		// There should be only one item in the map (the element's key being the insert type).
+		// There should be one item in the map (the element's key being the insert type).
 		for mk := range ins {
 			o.Type = mk
 			o.Data = extractString(ins[mk])
 			break
 		}
 	default:
-		return fmt.Errorf("op %q lacks an insert", ro)
+		return fmt.Errorf("op %+v lacks an insert", ro)
+	}
+
+	// Clear the map for reuse.
+	for k := range o.Attrs {
+		delete(o.Attrs, k)
 	}
 
 	if ro.Attrs != nil {
 		for attr := range ro.Attrs { // the map was already made
 			o.Attrs[attr] = extractString(ro.Attrs[attr])
-		}
-	} else {
-		// Clear the map for later reuse.
-		for k := range o.Attrs {
-			delete(o.Attrs, k)
 		}
 	}
 

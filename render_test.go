@@ -28,27 +28,33 @@ func testPair(opsFile, htmlFile string) error {
 	if err != nil {
 		return fmt.Errorf("could not read %s; %s\n", htmlFile, err)
 	}
-	got, err := Render(opsArr, nil)
+	got, err := Render(opsArr)
 	if err != nil {
 		return fmt.Errorf("error rendering; %s\n", err)
 	}
 	if !bytes.Equal(desired, got) {
-		return fmt.Errorf("bad rendering; wanted: \n%s\n got: \n%s\n", desired, got)
+		return fmt.Errorf("bad rendering; \nwanted: \n%s\ngot: \n%s\n", desired, got)
 	}
 	return nil
 }
 
 func TestOp_ClosePrevAttrs(t *testing.T) {
-	attrStates = []string{"italic", "bold"}
+	fts := formatState{
+		open: []format{
+			{"em", "italic", Tag},
+			{"strong", "bold", Tag},
+		},
+	}
 	o := &Op{
 		Data: "stuff",
+		Type: "text",
 		// no attributes set
 	}
-	desired := "</b></em>"
+	desired := "</strong></em>"
 	buf := new(bytes.Buffer)
-	o.ClosePrevAttrs(buf)
+	o.closePrevFormats(buf, &fts, nil)
 	got := buf.String()
 	if got != desired {
-		t.Errorf("closed attributes wrong; wanted %q; got %q\n", desired, got)
+		t.Errorf("closed attributes wrong; wanted %qgot %q\n", desired, got)
 	}
 }

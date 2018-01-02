@@ -114,18 +114,17 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 	// Close the inline formats opened within the block.
 	o.closePrevFormats(tempBuf, fs, customFormats)
 
-	var blockWrap struct{
+	var blockWrap struct {
 		tagName string
 		classes []string
-		style string
-		fs formatState // the formats for the block element itself
+		style   string
+		fs      formatState // the formats for the block element itself
 	}
 
 	// Open the tag for the Op if the Op Type calls for a tag.
 	tVal, tPlace := typeFm.Format()
 	if tPlace == Tag && tVal != "" {
 		blockWrap.tagName = tVal
-		openTagOrNot(finalBuf, tVal)
 	}
 
 	// If an opening tag has not been written, it may be specified in an attribute.
@@ -135,26 +134,36 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 			continue // not returning an error
 		}
 		if fw, ok := attrFm.(FormatWriter); ok {
-			// If an attribute wants to write the entire body, let it write the body.
+			// If an attribute format wants to write the entire body, let it write the body.
 			fw.Write(tempBuf)
 		}
 		o.addAttr(&blockWrap.fs, attrFm, tempBuf)
 	}
 
-	// If the block didn't get a tag from its Type, check if an attribute set the block tag.
-	//if tagName == "" {
-	//	set := false
-	//	for i := range fs.open {
-	//		if fs.open[i].place == Tag && fs.open[i].val != "" {
-	//			set = true
-	//			break
-	//		}
-	//	}
-	//	if !set {
-	//		tagName = "p"
-	//		openTagOrNot(finalBuf, tagName) // default to p tag
-	//	}
-	//}
+	// Merge all formats into a single tag.
+	for i := range blockWrap.fs.open {
+		val := blockWrap.fs.open[i].val
+		switch blockWrap.fs.open[i].place {
+		case Tag:
+			if blockWrap.tagName == "" {
+				blockWrap.tagName = val
+			}
+		case Class:
+			blockWrap.classes = append(blockWrap.classes, val)
+		case Style:
+			blockWrap.style += val
+		}
+
+	}
+
+	finalBuf.WriteByte('<')
+	finalBuf.WriteString(blockWrap.tagName)
+	finalBuf.WriteString(ClassesList(blockWrap.classes))
+	if blockWrap.style != "" {
+		finalBuf.WriteString(" style=")
+		finalBuf.WriteString(strconv.Quote(blockWrap.style))
+	}
+	finalBuf.WriteByte('>')
 
 	finalBuf.WriteString(o.Data) // Copy the data of the current Op (usually just "<br>" or nothing).
 
