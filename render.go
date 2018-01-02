@@ -5,6 +5,7 @@ package quill
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -43,7 +44,8 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) ([]by
 		// Get Formatter to check if the Op will just be writing a body.
 		typeFm := o.getFormatter(o.Type, customFormats)
 		if typeFm == nil {
-			continue // not returning an error
+			// Each Op should have a Formatter given by its type.
+			return nil, fmt.Errorf("no formatter found for type %q of op %q", o.Type, raw[i])
 		}
 
 		// If the op has a Write method defined (based on its type of attributes), we just write the body.
@@ -58,18 +60,21 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) ([]by
 			if o.Data == "\n" { // Write a block element and flush the temporary buffer.
 
 				// Copy the temporary block buffer to the final output and reset the temporary buffer.
+				o.Data = ""
 				o.writeBlock(fs, tempBuf, html, typeFm, customFormats)
 
-			} else {
+			} else { // Extract the block-terminating line feeds and write each part as its own Op.
 
 				split := strings.Split(o.Data, "\n")
 
 				for i := range split {
 
-					if split[i] == "" {
+					if split[i] == "" { // We're dealing with a blank line (split at \n\n) or a \n is at the very beginning or end.
 
-						// We're dealing with a blank line (split at \n\n) or a \n is at the very beginning or end.
-						o.Data = "\n"
+						if i > 0 && i != len(split)-1 { // If the empty string represents an empty paragraph.
+							o.Data = "<br>"
+						}
+
 						o.writeBlock(fs, tempBuf, html, typeFm, customFormats)
 
 					} else {
@@ -85,7 +90,7 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) ([]by
 
 		} else { // We are just adding stuff inline.
 
-			o.writeInline(fs, tempBuf, customFormats)
+			o.writeInline(fs, tempBuf, typeFm, customFormats)
 
 		}
 
@@ -106,14 +111,20 @@ type Op struct {
 // block is reached (the Op with the "\n" character holds the information about the block element).
 func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.Buffer, typeFm Formatter, customFormats func(string, *Op) Formatter) {
 
+	// Close the inline formats opened within the block.
 	o.closePrevFormats(tempBuf, fs, customFormats)
 
-	var tagName string // the name of the HTML tag wrapping the block
+	var blockWrap struct{
+		tagName string
+		classes []string
+		style string
+		fs formatState // the formats for the block element itself
+	}
 
 	// Open the tag for the Op if the Op Type calls for a tag.
 	tVal, tPlace := typeFm.Format()
 	if tPlace == Tag && tVal != "" {
-		tagName = tVal
+		blockWrap.tagName = tVal
 		openTagOrNot(finalBuf, tVal)
 	}
 
@@ -127,45 +138,43 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 			// If an attribute wants to write the entire body, let it write the body.
 			fw.Write(tempBuf)
 		}
-		o.addAttr(fs, attrFm, tempBuf)
+		o.addAttr(&blockWrap.fs, attrFm, tempBuf)
 	}
 
 	// If the block didn't get a tag from its Type, check if an attribute set the block tag.
-	if tagName == "" {
-		set := false
-		for i := range fs.open {
-			if fs.open[i].place == Tag && fs.open[i].val != "" {
-				set = true
-				break
-			}
-		}
-		if !set {
-			tagName = "p"
-			openTagOrNot(finalBuf, tagName) // default to p tag
-		}
-	}
+	//if tagName == "" {
+	//	set := false
+	//	for i := range fs.open {
+	//		if fs.open[i].place == Tag && fs.open[i].val != "" {
+	//			set = true
+	//			break
+	//		}
+	//	}
+	//	if !set {
+	//		tagName = "p"
+	//		openTagOrNot(finalBuf, tagName) // default to p tag
+	//	}
+	//}
 
-	if o.Data == "\n" {
-		o.Data = "<br>" // Avoid having empty <p></p>.
-	}
+	finalBuf.WriteString(o.Data) // Copy the data of the current Op (usually just "<br>" or nothing).
 
-	finalBuf.WriteString(o.Data) // Copy the data of the current Op.
+	finalBuf.Write(tempBuf.Bytes())
 
-	o.closePrevFormats(tempBuf, fs, customFormats)
+	o.closePrevFormats(finalBuf, &blockWrap.fs, customFormats)
 
-	finalBuf.Write(tempBuf.Bytes()) // Copy
-
-	closeTagOrNot(finalBuf, tagName)
+	closeTag(finalBuf, blockWrap.tagName)
 
 	tempBuf.Reset()
 
 }
 
-func (o *Op) writeInline(fs *formatState, buf *bytes.Buffer, customFormats func(string, *Op) Formatter) {
+func (o *Op) writeInline(fs *formatState, buf *bytes.Buffer, fm Formatter, customFormats func(string, *Op) Formatter) {
 
 	o.closePrevFormats(buf, fs, customFormats)
 
-	var fm Formatter // reuse in loop
+	if fm != nil {
+		o.addAttr(fs, fm, buf)
+	}
 
 	for attr := range o.Attrs {
 		fm = o.getFormatter(attr, customFormats)
@@ -258,9 +267,9 @@ func (o *Op) closePrevFormats(buf *bytes.Buffer, fs *formatState, customFormats 
 			fs.pop()
 
 			if fPlace == Tag {
-				closeTagOrNot(buf, fVal)
+				closeTag(buf, fVal)
 			} else {
-				closeTagOrNot(buf, "span")
+				closeTag(buf, "span")
 			}
 
 		}
@@ -272,7 +281,7 @@ func (o *Op) closePrevFormats(buf *bytes.Buffer, fs *formatState, customFormats 
 				//	place: Tag,
 				//})
 				fs.pop() // TODO ???
-				closeTagOrNot(buf, wrapClose)
+				closeTag(buf, wrapClose)
 			}
 		}
 
@@ -401,11 +410,9 @@ func openTagOrNot(buf *bytes.Buffer, s string) {
 	}
 }
 
-// closeTagOrNot writes a complete closing tag if s is not blank.
-func closeTagOrNot(buf *bytes.Buffer, s string) {
-	if s != "" {
-		buf.WriteString("</")
-		buf.WriteString(s)
-		buf.WriteByte('>')
-	}
+// closeTag writes a complete closing tag.
+func closeTag(buf *bytes.Buffer, s string) {
+	buf.WriteString("</")
+	buf.WriteString(s)
+	buf.WriteByte('>')
 }

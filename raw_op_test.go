@@ -61,14 +61,15 @@ func TestRawOp_makeOp(t *testing.T) {
 		},
 	}
 
+	o := new(Op) // reuse in loop
+
 	for i := range rawOps {
 
-		got, err := rawOps[i].makeOp()
-		if err != nil {
+		if err := rawOps[i].makeOp(o); err != nil {
 			fmt.Errorf("error: %s", err)
 		}
 
-		if !reflect.DeepEqual(*got, want[i]) {
+		if !reflect.DeepEqual(*o, want[i]) {
 			t.Errorf("failed rawOpToOp; got %v for index %s", want[i], i)
 		}
 
