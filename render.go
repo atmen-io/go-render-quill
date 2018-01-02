@@ -31,11 +31,12 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) ([]by
 	var (
 		html    = new(bytes.Buffer) // the final output
 		tempBuf = new(bytes.Buffer) // temporary buffer reused for each block element
+		fs      = new(formatState)
 		o       *Op
-		//fm      Formatter
+		fm      Formatter
 	)
 
-	attrs := &AttrState{ // the tags currently open in the order in which they were opened
+	attrs := &formatState{ // the tags currently open in the order in which they were opened
 		temp: tempBuf,
 	}
 
@@ -46,7 +47,7 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) ([]by
 			return nil, err
 		}
 
-		fm := o.getFormatter(o.Type, customFormats)
+		fm = o.getFormatter(o.Type, customFormats)
 		if fm == nil {
 			continue // not returning an error
 		}
@@ -57,10 +58,9 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) ([]by
 			continue
 		}
 
-		if fm.TagName() != "" {
-			tempBuf.WriteByte('<')
-			tempBuf.WriteString(fm.TagName())
-		}
+		o.startOp(tempBuf, customFormats, fs)
+
+		openTagOrNot(tempBuf, fm.TagName())
 
 		for attr := range o.Attrs {
 			attrFm := o.getFormatter(attr, customFormats)
@@ -70,6 +70,9 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) ([]by
 			if bw, ok := attrFm.(BodyWriter); ok {
 				bw.Write(tempBuf)
 			} else {
+
+				openTagOrNot(tempBuf, fm.TagName())
+
 				tempBuf.WriteString(o.Data)
 			}
 		}
@@ -82,13 +85,32 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) ([]by
 		// last block element is reached.
 		if strings.IndexByte(o.Data, '\n') != -1 {
 
-			if o.Data == "\n" {
+		fullLine: // TODO: refactor this into another function
+			if o.Data == "\n" { // Write a block element and flush the temporary buffer.
+
+				openTagOrNot(tempBuf, fm.TagName())
+
+				if tempBuf.Len() == 0 {
+					o.Data = "<br>" // Avoid having empty <p></p>.
+					//tempBuf.WriteString("<br>") // Avoid having empty <p></p>.
+				}
+
+				closeTagOrNot(tempBuf, fm.TagName())
 
 			} else {
 
 				split := strings.Split(o.Data, "\n")
 
 				for i := range split {
+
+					if split[i] == "" { // If we're dealing with a blank line (split \n\n).
+
+						o.Data = "\n"
+						goto fullLine // TODO: refactor this into another function
+
+					} else {
+
+					}
 
 					if i > 0 {
 						oi := &Op{
@@ -134,11 +156,8 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) ([]by
 		}
 
 		tempBuf.WriteString(o.Data)
-		if fm.TagName() != "" {
-			tempBuf.WriteString("</")
-			tempBuf.WriteString(fm.TagName())
-			tempBuf.WriteByte('>')
-		}
+
+
 
 	}
 
@@ -152,9 +171,9 @@ type Op struct {
 	Attrs map[string]string // key is attribute name; value is either value string or "y" (meaning true) or "n" (meaning false)
 }
 
-// HasAttr says if the Op is not nil and has the attribute set to a non-blank value.
-func (o *Op) HasAttr(attr string) bool {
-	return o != nil && o.Attrs[attr] != ""
+// HasAttr says if the Op is not nil and either has the attribute set to a non-blank value.
+func (o *Op) HasAttr(attr, val string) bool {
+	return o != nil && (o.Attrs[attr] != "" || o.Attrs[attr] != val)
 }
 
 // getFormatter returns a formatter based on the keyword (either "text" or "" or an attribute name) and the Op settings.
@@ -191,6 +210,8 @@ func (o *Op) getFormatter(keyword string, customFormats func(string, *Op) Format
 		return new(boldFormat)
 	case "italic":
 		return new(italicFormat)
+	case "color":
+		return new(colorFormat)
 	}
 
 	return nil
@@ -199,14 +220,41 @@ func (o *Op) getFormatter(keyword string, customFormats func(string, *Op) Format
 
 // closePrevAttrs checks if the previous Op opened any attribute tags that are not supposed to be set on the current Op and closes
 // those tags in the opposite order in which they were opened.
-func (o *Op) closePrevAttrs(buf *bytes.Buffer, st *AttrState) {
-	for i := len(st.t) - 1; i >= 0; i-- { // Start with the last attribute opened.
-		if !o.HasAttr(st.t[i]) {
+func (o *Op) closePrevAttrs(buf *bytes.Buffer, fs *formatState, customFormats func(string) Formatter) {
+	for i := len(fs.open) - 1; i >= 0; i-- { // Start with the last attribute opened.
+
+		id := fs.open[i].Ident
+
+		if !o.HasAttr(id) {
 		}
+
 	}
 }
 
-func (o *Op) OpenAttrs(buf *bytes.Buffer) {
+func (o *Op) startOp(buf *bytes.Buffer, customFormats func(string, *Op) Formatter, fs formatState) {
+
+	o.closePrevAttrs(buf, fs)
+
+	for i := range fs.open {
+
+		id := fs.open[i].Ident
+
+		fm := o.getFormatter(id, customFormats)
+
+		if !fm.HasSet(o, id) {
+			fs.close(id)
+		}
+
+	}
+
+	for attr := range o.Attrs {
+
+		fm := o.getFormatter(attr, customFormats)
+
+		fs.add()
+
+	}
+
 }
 
 // An OpHandler takes the previous Op (which is nil if the current Op is the first) and the current Op and writes the
@@ -226,6 +274,10 @@ func (o *Op) OpenAttrs(buf *bytes.Buffer) {
 type Formatter interface {
 	TagName() string // Optionally wrap the element with the tag (return empty string for no wrap).
 	Class() string   // Optionally give a CSS class to set (return empty string for no class).
+	Style() string // Optionally set a style attribute; must be blank or just the style key & prop with semicolon at the end.
+	//HasSet(*Op, string) bool // Says if the Op has the attribute with the identifier set.
+	// Pre(*AttrState)
+	// Post(*AttrState)
 }
 
 // A Formatter may also be a BodyWriter if it wishes to write the body of the Op in some custom way (useful for embeds).
@@ -252,39 +304,59 @@ type BodyWriter interface {
 //	}
 //}
 
-type AttrState struct {
-	t    []string  // the list of currently open attribute tags
+type Format struct {
+	TagName, Class, Attr string // First two things are optional; Attr uniquely identifies this kind of format.
+}
+
+type formatState struct {
+	open []Format  // the list of currently open attribute tags
 	temp io.Writer // the temporary buffer (for the block element)
 }
 
 // Add adds an inline attribute state to the end of the list of open states.
-func (as *AttrState) Add(s string) {
-	as.t = append(as.t, s)
-	as.temp.Write([]byte(s))
+func (fs *formatState) add(f Format) {
+	fs.open = append(fs.open, f)
+
+	//as.temp.Write([]byte(f))
 }
 
 // Pop removes the last attribute state from the list of states if the last is s.
-func (as *AttrState) Pop(s string) {
-	if as.t[len(as.t)-1] == s {
-		as.t = as.t[:len(as.t)-1]
+func (fs *formatState) close(f Format) {
+	if fs.open[len(fs.open)-1] == f {
+		fs.open = fs.open[:len(fs.open)-1]
 	}
 }
 
-func AttrsToClasses(attrs map[string]string) (classes []string) {
-	for k, v := range attrs {
-		switch k {
-		case "align":
-			classes = append(classes, "text-align-"+v)
-		}
-	}
-	return
-}
+//func AttrToClass(key, val string) (classes []string) {
+//	for k, v := range attrs {
+//		switch k {
+//		case "align":
+//			classes = append(classes, "text-align-"+v)
+//		}
+//	}
+//	return
+//}
 
 func ClassesList(cl []string) (classAttr string) {
 	if len(cl) > 0 {
 		classAttr = " class=" + strconv.Quote(strings.Join(cl, " "))
 	}
 	return
+}
+
+func openTagOrNot(buf *bytes.Buffer, s string) {
+	if s != "" {
+		buf.WriteByte('<')
+		buf.WriteString(s)
+	}
+}
+
+func closeTagOrNot(buf *bytes.Buffer, s string) {
+	if s != "" {
+		buf.WriteString("</")
+		buf.WriteString(s)
+		buf.WriteByte('>')
+	}
 }
 
 //func writeClasses(cl []string, buf *bytes.Buffer) {
