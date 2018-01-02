@@ -205,16 +205,24 @@ func (o *Op) getFormatter(keyword string, customFormats func(string, *Op) Format
 // closePrevAttrs checks if the previous Op opened any attribute tags that are not supposed to be set on the current Op and closes
 // those tags in the opposite order in which they were opened.
 func (o *Op) closePrevAttrs(buf *bytes.Buffer, fs *formatState, customFormats func(string, *Op) Formatter) {
+	var f   format // reused in the loop for convenience
 	for i := len(fs.open) - 1; i >= 0; i-- { // Start with the last attribute opened.
 
-		id := fs.open[i].Ident
+		f = fs.open[i]
 
-		if !o.HasAttr(id) {
+		if f.TagName != "" {
+
+		} else if f.Class != "" {
+
+		} else if f.Style != "" {
+
 		}
 
 	}
 }
 
+// maybeAddAttr adds an inline format that the string that will be written to buf right after this will have.
+// The format is written only if it is not already opened up earlier.
 func (o *Op) maybeAddAttr(fs *formatState, fm Formatter, buf *bytes.Buffer) {
 
 	var (
@@ -294,11 +302,7 @@ func (o *Op) maybeAddAttr(fs *formatState, fm Formatter, buf *bytes.Buffer) {
 // A BlockWriter defines how an insert of block type gets rendered. The opening HTML tag of a block element is written to the
 // main buffer only after the "\n" character terminating the block is reached (the Op with the "\n" character holds the information
 // about the block element).
-//type BlockWriter interface {
-//	Open(*Op, *AttrState)
-//	Close(*Op, *AttrState)
-//	//Write(*Op, io.Writer)
-//}
+
 
 type Formatter interface {
 	TagName() string // Optionally wrap the element with the tag (return empty string for no wrap).
