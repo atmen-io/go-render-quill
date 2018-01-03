@@ -7,13 +7,18 @@ import (
 
 type boldFormat struct{}
 
-func (*boldFormat) Format() (string, StyleFormat) { return "strong", Tag }
+func (*boldFormat) Fmt() *Format {
+	return &Format{
+		Val:   "strong",
+		Place: Tag,
+	}
+}
 
 type imageFormat struct {
 	src, alt string
 }
 
-func (*imageFormat) Format() (_ string, _ StyleFormat) { return } // The body contains the entire element.
+func (*imageFormat) Fmt() *Format { return new(Format) } // The body contains the entire element.
 
 // imageFormat implements the FormatWriter interface.
 func (iw *imageFormat) Write(buf io.Writer) {
@@ -30,25 +35,35 @@ func (iw *imageFormat) Write(buf io.Writer) {
 
 type italicFormat struct{}
 
-func (*italicFormat) Format() (string, StyleFormat) { return "em", Tag }
+func (*italicFormat) Fmt() *Format {
+	return &Format{
+		Val:   "em",
+		Place: Tag,
+	}
+}
 
 type colorFormat struct {
 	c string
 }
 
-func (cf *colorFormat) Format() (string, StyleFormat) { return cf.c, Style }
+func (cf *colorFormat) Fmt() *Format {
+	return &Format{
+		Val:   cf.c,
+		Place: Style,
+	}
+}
 
 type linkFormat struct {
 	href string
 }
 
-func (*linkFormat) Format() (_ string, _ StyleFormat) { return } // Wrapper only.
+func (*linkFormat) Fmt() *Format { return new(Format) } // a wrapper only
 
-func (lf *linkFormat) PreWrap(_ []string) string {
+func (lf *linkFormat) PreWrap(_ []*Format) string {
 	return `<a href=` + strconv.Quote(lf.href) + ` target="_blank">`
 }
 
-func (lf *linkFormat) PostWrap(openedTags []string, o *Op) string {
+func (lf *linkFormat) PostWrap(_ []*Format, o *Op) string {
 	if o.HasAttr("link") {
 		return ""
 	}

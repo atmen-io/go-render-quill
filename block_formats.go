@@ -2,30 +2,54 @@ package quill
 
 type textFormat struct{}
 
-func (*textFormat) Format() (string, StyleFormat) { return "p", Tag }
+func (*textFormat) Fmt() *Format {
+	return &Format{
+		Val:   "p",
+		Place: Tag,
+		Block: true,
+	}
+}
 
 type blockQuoteFormat struct{}
 
-func (*blockQuoteFormat) Format() (string, StyleFormat) { return "blockquote", Tag }
+func (*blockQuoteFormat) Fmt() *Format {
+	return &Format{
+		Val:   "blockquote",
+		Place: Tag,
+		Block: true,
+	}
+}
 
 type headerFormat struct {
 	h string // the string "h1", "h2", ...
 }
 
-func (hf *headerFormat) Format() (string, StyleFormat) { return hf.h, Tag }
+func (hf *headerFormat) Fmt() *Format {
+	return &Format{
+		Val:   hf.h,
+		Place: Tag,
+		Block: true,
+	}
+}
 
 type listFormat struct {
 	lType  string // either "ul" or "ol"
 	indent uint8  // the number of nested
 }
 
-func (lf *listFormat) Format() (string, StyleFormat) { return "li", Tag }
+func (lf *listFormat) Fmt() *Format {
+	return &Format{
+		Val:   "li",
+		Place: Tag,
+		Block: true,
+	}
+}
 
 // listFormat implements the FormatWrapper interface.
-func (lf *listFormat) PreWrap(openedTags []string) string {
+func (lf *listFormat) PreWrap(openTags []*Format) string {
 	var count uint8
-	for i := range openedTags {
-		if openedTags[i] == lf.lType {
+	for i := range openTags {
+		if openTags[i].Place == Tag && openTags[i].Val == lf.lType {
 			count++
 		}
 	}
@@ -37,10 +61,10 @@ func (lf *listFormat) PreWrap(openedTags []string) string {
 
 // listFormat implements the FormatWrapper interface.
 func (lf *listFormat) PostWrap(openedTags []string, o *Op) string {
-	if o.HasAttr("list") {
+	if o.Attrs["list"] == lf.lType { // TODO: too simplistic; check for nested lists
 		return ""
 	}
-	return "</" + lf.lType + ">" // TODO: too simplistic, check for nested lists
+	return "</" + lf.lType + ">"
 }
 
 // indentDepths gives either the indent amount of a list or 0 if there is no indenting.
@@ -56,4 +80,10 @@ type alignFormat struct {
 	align string
 }
 
-func (af *alignFormat) Format() (string, StyleFormat) { return af.align, Class }
+func (af *alignFormat) Fmt() *Format {
+	return &Format{
+		Val:   af.align,
+		Place: Class,
+		Block: true,
+	}
+}

@@ -11,12 +11,12 @@ func TestSimple(t *testing.T) {
 
 	cases := []string{
 		`[{"insert": "\n"}]`,
-		`[{"insert":"line1\nline2\n"}]`,
+		`[{"insert": "line1\nline2\n"}]`,
 		`[{"insert": "line1\n\nline3\n"}]`,
 	}
 
 	want := []string{
-		"<p></p>",
+		"<p><br></p>",
 		"<p>line1</p><p>line2</p>",
 		"<p>line1</p><p><br></p><p>line3</p>",
 	}
@@ -69,9 +69,9 @@ func testPair(opsFile, htmlFile string) error {
 
 func TestOp_ClosePrevAttrs(t *testing.T) {
 	fts := formatState{
-		open: []format{
-			{"em", "italic", Tag},
-			{"strong", "bold", Tag},
+		open: []*Format{
+			{"em", Tag, false, "italic"},
+			{"strong", Tag, false, "bold"},
 		},
 	}
 	o := &Op{
@@ -84,6 +84,6 @@ func TestOp_ClosePrevAttrs(t *testing.T) {
 	o.closePrevFormats(buf, &fts, nil)
 	got := buf.String()
 	if got != desired {
-		t.Errorf("closed attributes wrong; wanted %qgot %q\n", desired, got)
+		t.Errorf("closed attributes wrong; wanted %q; got %q\n", desired, got)
 	}
 }
