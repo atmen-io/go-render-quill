@@ -264,7 +264,10 @@ func (o *Op) getFormatter(keyword string, customFormats func(string, *Op) Format
 // closePrevAttrs checks if the previous Op opened any attribute tags that are not supposed to be set on the current Op and closes
 // those tags in the opposite order in which they were opened.
 func (o *Op) closePrevFormats(buf *bytes.Buffer, fs *formatState, customFormats func(string, *Op) Formatter) {
-	var f *Format                            // reused in the loop for convenience
+
+	var f *Format // reused in the loop for convenience
+	var tempClosed []*Format
+
 	for i := len(fs.open) - 1; i >= 0; i-- { // Start with the last format opened.
 
 		f = fs.open[i]
@@ -279,26 +282,36 @@ func (o *Op) closePrevFormats(buf *bytes.Buffer, fs *formatState, customFormats 
 		// If this format is not set on the current Op, close it.
 		if !o.HasAttr(f.keyword) || (fm.Val != f.Val) {
 
-			fs.pop()
-			i--
-
-			if fm.Place == Tag {
-				closeTag(buf, fm.Val)
-			} else {
-				closeTag(buf, "span")
+			// If we need to close a tag after which there are tags that should stay open, close the following tags for now.
+			if i < len(fs.open)-1 {
+				for ij := len(fs.open) - 1; ij > i; ij-- {
+					tempClosed = append(tempClosed, fs.open[ij])
+					fs.pop()
+					fs.open[ij].close(buf)
+					i--
+				}
 			}
+
+			fs.pop()
+			fm.close(buf)
 
 		}
 
 		if fw, ok := fmTer.(FormatWrapper); ok {
 			if wrapClose := fw.PostWrap(fs.open, o); wrapClose != "" {
-				fs.pop() // TODO ???
+				fs.pop()                   // TODO ???
+				buf.WriteString(wrapClose) // The complete closing wrap is given in wrapClose.
 				i--
-				closeTag(buf, wrapClose)
 			}
 		}
 
 	}
+
+	// Open back up the closed tags.
+	for i := range tempClosed {
+		fs.addFormat(tempClosed[i].keyword, o.getFormatter(tempClosed[i].keyword, customFormats), buf)
+	}
+
 }
 
 // Each handler should check the previous Op to see if it has attributes that are not set on the current Op and close the
@@ -338,6 +351,14 @@ type Format struct {
 	keyword string      // the format identifier (either an insert type or attribute name)
 }
 
+func (f *Format) close(buf *bytes.Buffer) {
+	if f.Place == Tag {
+		closeTag(buf, f.Val)
+	} else {
+		closeTag(buf, "span")
+	}
+}
+
 // A formatState holds the current state of open tag, class, or style formats.
 type formatState struct {
 	open []*Format // the list of currently open attribute tags
@@ -364,8 +385,9 @@ func (fs *formatState) addFormat(keyword string, fmTer Formatter, buf *bytes.Buf
 	if fw, ok := fmTer.(FormatWrapper); ok {
 		if wrapOpen := fw.PreWrap(fs.open); wrapOpen != "" {
 			fs.open = append(fs.open, &Format{
-				Val:   wrapOpen,
-				Place: Tag,
+				Val:     wrapOpen,
+				Place:   Tag,
+				keyword: keyword,
 			})
 			buf.WriteString(wrapOpen)
 		}
