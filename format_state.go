@@ -29,6 +29,10 @@ func (fs *formatState) closePrevious(buf *bytes.Buffer, o *Op) {
 		// If this format is not set on the current Op, close it.
 		if !fs.open[i].fm.HasFormat(o) && !fs.open[i].Block {
 
+			if fs.doFormatWrapper("close", fs.open[i].fm, o, buf) {
+				continue
+			}
+
 			// If we need to close a tag after which there are tags that should stay open, close the following tags for now.
 			if i < len(fs.open)-1 {
 				for ij := len(fs.open) - 1; ij > i; ij-- {
@@ -38,11 +42,10 @@ func (fs *formatState) closePrevious(buf *bytes.Buffer, o *Op) {
 			}
 
 			fs.open[i].close(buf)
+
 			fs.pop()
 
 		}
-
-		fs.doFormatWrapper("close", fs.open[i].fm, o, buf)
 
 	}
 
@@ -58,7 +61,9 @@ func (fs *formatState) addFormat(fm *Format, buf *bytes.Buffer) {
 		return
 	}
 
-	fs.doFormatWrapper("open", fm.fm, nil, buf)
+	if fs.doFormatWrapper("open", fm.fm, nil, buf) {
+		return
+	}
 
 	fs.open = append(fs.open, fm)
 
