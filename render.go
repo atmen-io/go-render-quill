@@ -1,5 +1,8 @@
 // Package `quill` takes a Quill-based Delta (https://github.com/quilljs/delta) as a JSON array of `insert` operations
 // and renders the defined HTML document.
+//
+// This library is designed to be easily extendable. Simply call RenderExtended with a function that may provide its
+// own formats for certain kinds of ops and attributes.
 package quill
 
 import (
@@ -12,27 +15,27 @@ import (
 )
 
 // Render takes a Delta array of insert operations and returns the rendered HTML using the built-in settings.
+// If an error occurs while rendering, any HTML already rendered is returned.
 func Render(ops []byte) ([]byte, error) {
 	return RenderExtended(ops, nil)
 }
 
 // RenderExtended takes a Delta array of insert operations and, optionally, a function that may provide a Formatter to
 // customize the way certain kinds of inserts are rendered. If the given Formatter is nil, then the default one that is
-// built in is used. The returned byte slice is the rendered HTML.
-func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) ([]byte, error) {
+// built in is used. If an error occurs while rendering, any HTML already rendered is returned.
+func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) (html []byte, err error) {
 
 	var raw []rawOp
-	err := json.Unmarshal(ops, &raw)
-	if err != nil {
+	if err = json.Unmarshal(ops, &raw); err != nil {
 		return nil, err
 	}
 
 	var (
-		html    = new(bytes.Buffer)       // the final output
-		tempBuf = new(bytes.Buffer)       // temporary buffer reused for each block element
-		fs      = new(formatState)        // the tags currently open in the order in which they were opened
-		o       = new(Op)                 // allocate memory for an Op to reuse for all iterations
-		fms     = make([]Formatter, 0, 4) // the Formatter types that we may use for any Op
+		finalBuf = new(bytes.Buffer)       // the final output
+		tempBuf  = new(bytes.Buffer)       // temporary buffer reused for each block element
+		fs       = new(formatState)        // the tags currently open in the order in which they were opened
+		o        = new(Op)                 // allocate memory for an Op to reuse for all iterations
+		fms      = make([]Formatter, 0, 4) // the Formatter types defined for each Op
 	)
 	o.Attrs = make(map[string]string, 3) // initialize once here only
 
@@ -40,13 +43,15 @@ opLoop:
 	for i := range raw {
 
 		if err = raw[i].makeOp(o); err != nil {
-			return nil, err
+			return finalBuf.Bytes(), err
 		}
+
+		fms = fms[:0] // Reset the slice for the current Op iteration.
 
 		// To set up fms, first check the Op insert type.
 		fmTer := o.getFormatter(o.Type, customFormats)
 		if fmTer == nil {
-			return html.Bytes(), fmt.Errorf("an op does not have a format defined for its type: %v", raw[i])
+			return finalBuf.Bytes(), fmt.Errorf("an op does not have a format defined for its type: %v", raw[i])
 		} else if !fs.hasSet(fmTer.Fmt()) {
 			fms = append(fms, fmTer)
 		}
@@ -62,8 +67,7 @@ opLoop:
 		// Check if any of the formats is a FormatWriter. If any is, just write it out and continue to the next Op.
 		for i := range fms {
 			if wr, ok := fms[i].(FormatWriter); ok {
-				wr.Write(html)
-				fms = fms[:0] // Reset the slice for the next Op.
+				wr.Write(finalBuf)
 				continue opLoop
 			}
 		}
@@ -80,7 +84,7 @@ opLoop:
 					o.Data = ""
 				}
 
-				o.writeBlock(fs, tempBuf, html, fms)
+				o.writeBlock(fs, tempBuf, finalBuf, fms)
 
 			} else { // Extract the block-terminating line feeds and write each part as its own Op.
 
@@ -98,7 +102,7 @@ opLoop:
 							o.Data = "<br>"
 						}
 
-						o.writeBlock(fs, tempBuf, html, fms)
+						o.writeBlock(fs, tempBuf, finalBuf, fms)
 
 					} else if o.Data != "" { // If the last element in split is just "" then the last character in the rawOp was a "\n".
 						o.writeInline(fs, tempBuf, fms)
@@ -112,27 +116,25 @@ opLoop:
 			o.writeInline(fs, tempBuf, fms)
 		}
 
-		// Reset the slice for the next Op.
-		fms = fms[:0]
-
 	}
 
-	return html.Bytes(), nil
+	html = finalBuf.Bytes()
+	return
 
 }
 
+// An Op is a Delta insert operations (https://github.com/quilljs/delta#insert) that has been converted into this format for
+// usability with the type safety in Go.
 type Op struct {
 	Data  string            // the text to insert or the value of the embed object (http://quilljs.com/docs/delta/#embeds)
 	Type  string            // the type of the op (typically "text", but any other type can be registered)
-	Attrs map[string]string // key is attribute name; value is either value string or "y" (meaning true) or "n" (meaning false)
+	Attrs map[string]string // key is attribute name; value is either the attribute value or "y" (meaning true)
 }
 
 // writeBlock writes a block element (which may be nested inside another block element if it is a FormatWrapper).
 // The opening HTML tag of a block element is written to the main buffer only after the "\n" character terminating the
 // block is reached (the Op with the "\n" character holds the information about the block element).
 func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.Buffer, newFms []Formatter) {
-
-	//fmt.Printf("WRITING BLOCK: %q \n", *o)
 
 	// Close the inline formats opened within the block.
 	o.closePrevFormats(tempBuf, fs)
@@ -155,16 +157,20 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 	}
 
 	// If an opening tag has not been written, it may be specified by an attribute.
-	for attr := range o.Attrs {
-		fmTer := o.getFormatter(attr, customFormats)
-		if fmTer == nil {
-			continue // not returning an error
-		}
-		fm = fmTer.Fmt()
-		fm.fm = fmTer
-		// Save the desired attributes without writing them anywhere.
-		blockWrap.fs.addFormat(fm, &bytes.Buffer{})
+	for i := range newFms {
+		fm := newFms[i].Fmt()
+
 	}
+	//for attr := range o.Attrs {
+	//	fmTer := o.getFormatter(attr, customFormats)
+	//	if fmTer == nil {
+	//		continue // not returning an error
+	//	}
+	//	fm = fmTer.Fmt()
+	//	fm.fm = fmTer
+	//	// Save the desired attributes without writing them anywhere.
+	//	blockWrap.fs.addFormat(fm, &bytes.Buffer{})
+	//}
 
 	// Merge all formats into a single tag.
 	for i := range blockWrap.fs.open {
@@ -184,7 +190,7 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 	if blockWrap.tagName != "" {
 		finalBuf.WriteByte('<')
 		finalBuf.WriteString(blockWrap.tagName)
-		finalBuf.WriteString(ClassesList(blockWrap.classes))
+		finalBuf.WriteString(classesList(blockWrap.classes))
 		if blockWrap.style != "" {
 			finalBuf.WriteString(" style=")
 			finalBuf.WriteString(strconv.Quote(blockWrap.style))
@@ -206,11 +212,9 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 
 func (o *Op) writeInline(fs *formatState, buf *bytes.Buffer, newFms []Formatter) {
 
-	//fmt.Printf("WRITING INLINE: %q \n", *o)
-
 	o.closePrevFormats(buf, fs)
 
-	for i := range newFms {
+	for i := range newFms { // TODO: for consistency, maybe first sort the formats alphabetically
 		fm := newFms[i].Fmt()
 		if fm != nil && !fm.Block {
 			fs.addFormat(fm, buf)
@@ -221,7 +225,7 @@ func (o *Op) writeInline(fs *formatState, buf *bytes.Buffer, newFms []Formatter)
 
 }
 
-// HasAttr says if the Op is not nil and either has the attribute set to a non-blank value.
+// HasAttr says if the Op is not nil and has the attribute set to a non-blank value.
 func (o *Op) HasAttr(attr string) bool {
 	return o != nil && o.Attrs[attr] != ""
 }
@@ -281,27 +285,14 @@ func (o *Op) getFormatter(keyword string, customFormats func(string, *Op) Format
 
 }
 
-// getNewFormats checks the Op Type and each attribute and returns all defined Formatter formats set on the Op.
-//func (o *Op) getNewFormats(fs *formatState, customFormats func(string, *Op) Formatter) []Formatter {
-//
-//
-//
-//	return fms
-//
-//}
-
-// closePrevAttrs checks if the previous Op opened any attribute tags that are not supposed to be set on the current Op and closes
-// those tags in the opposite order in which they were opened.
+// closePrevFormats checks if the previous Op opened any formats that are not set on the current Op and closes those formats
+// in the opposite order in which they were opened.
 func (o *Op) closePrevFormats(buf *bytes.Buffer, fs *formatState) {
-
-	var f *Format // reused in the loop for convenience
 
 	for i := len(fs.open) - 1; i >= 0; i-- { // Start with the last format opened.
 
-		f = fs.open[i]
-
 		// If this format is not set on the current Op, close it.
-		if !f.fm.HasFormat(o) && !f.Block {
+		if !fs.open[i].fm.HasFormat(o) && !fs.open[i].Block {
 
 			// If we need to close a tag after which there are tags that should stay open, close the following tags for now.
 			if i < len(fs.open)-1 {
@@ -311,12 +302,12 @@ func (o *Op) closePrevFormats(buf *bytes.Buffer, fs *formatState) {
 				}
 			}
 
-			f.close(buf)
+			fs.open[i].close(buf)
 			fs.pop()
 
 		}
 
-		fs.doFormatWrapper("close", f.fm, o, buf)
+		fs.doFormatWrapper("close", fs.open[i].fm, o, buf)
 
 	}
 
@@ -368,94 +359,18 @@ func (f *Format) close(buf *bytes.Buffer) {
 	}
 }
 
-// A formatState holds the current state of open tag, class, or style formats.
-type formatState struct {
-	open []*Format // the list of currently open attribute tags
-}
-
-// hasSet says if the given format is already opened.
-func (fs *formatState) hasSet(fm *Format) bool {
-	for i := range fs.open {
-		if fs.open[i].Place == fm.Place && fs.open[i].Val == fm.Val {
-			return true
-		}
-	}
-	return false
-}
-
-// addFormat adds a format that the string that will be written to buf right after this will have.
-// Before calling addFormat, check if the Format is already opened up earlier.
-// Do not use addFormat to write block-level styles (those are written by o.writeBlock after being merged).
-func (fs *formatState) addFormat(fm *Format, buf *bytes.Buffer) {
-
-	// Check that the place where the format is supposed to be is valid.
-	if fm.Place < 0 || fm.Place > 2 {
-		return
-	}
-
-	fs.doFormatWrapper("open", fm.fm, nil, buf)
-
-	fs.open = append(fs.open, fm)
-
-	buf.WriteByte('<')
-
-	switch fm.Place {
-	case Tag:
-		buf.WriteString(fm.Val)
-	case Class:
-		buf.WriteString("span class=")
-		buf.WriteString(strconv.Quote(fm.Val))
-	case Style:
-		buf.WriteString("span style=")
-		buf.WriteString(strconv.Quote(fm.Val))
-	}
-
-	buf.WriteByte('>')
-
-}
-
-// Pop removes the last state from the list of open states.
-func (fs *formatState) pop() {
-	fs.open = fs.open[:len(fs.open)-1]
-}
-
-func (fs *formatState) doFormatWrapper(openClose string, fmTer Formatter, o *Op, buf *bytes.Buffer) (wrote bool) {
-	if openClose == "open" {
-		if fw, ok := fmTer.(FormatWrapper); ok {
-			if wrapOpen := fw.PreWrap(fs.open); wrapOpen != "" {
-				fs.open = append(fs.open, &Format{
-					Val:   wrapOpen,
-					Place: Tag,
-					fm:    fmTer,
-				})
-				buf.WriteString(wrapOpen)
-				wrote = true
-			}
-		}
-	} else if openClose == "close" {
-		if fw, ok := fmTer.(FormatWrapper); ok {
-			if wrapClose := fw.PostWrap(fs.open, o); wrapClose != "" {
-				fs.pop()                   // TODO ???
-				buf.WriteString(wrapClose) // The complete closing wrap is given in wrapClose.
-				wrote = true
-			}
-		}
-	}
-	return
-}
-
-// If cl has something, then ClassesList returns the class attribute to add to an HTML element with a space before the
+// If cl has something, then classesList returns the class attribute to add to an HTML element with a space before the
 // "class" attribute and spaces between each class name.
-func ClassesList(cl []string) (classAttr string) {
+func classesList(cl []string) (classAttr string) {
 	if len(cl) > 0 {
 		classAttr = " class=" + strconv.Quote(strings.Join(cl, " "))
 	}
 	return
 }
 
-// closeTag writes a complete closing tag.
-func closeTag(buf *bytes.Buffer, s string) {
+// closeTag writes a complete closing tag to buf.
+func closeTag(buf *bytes.Buffer, tagName string) {
 	buf.WriteString("</")
-	buf.WriteString(s)
+	buf.WriteString(tagName)
 	buf.WriteByte('>')
 }
