@@ -136,16 +136,18 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 
 	// If an opening tag has not been written, it may be specified by an attribute.
 	for attr := range o.Attrs {
-		attrFm := o.getFormatter(attr, customFormats)
-		if attrFm == nil {
+		fmTer := o.getFormatter(attr, customFormats)
+		if fmTer == nil {
 			continue // not returning an error
 		}
-		if fw, ok := attrFm.(FormatWriter); ok {
+		if fw, ok := fmTer.(FormatWriter); ok {
 			// If an attribute format wants to write the entire body, let it write the body.
 			fw.Write(tempBuf)
 		}
+		fm := fmTer.Fmt()
+		fm.fm = fmTer
 		// Save the desired attributes without writing them anywhere.
-		blockWrap.fs.addFormat(attr, attrFm, &bytes.Buffer{})
+		blockWrap.fs.addFormat(fm, &bytes.Buffer{})
 	}
 
 	// Merge all formats into a single tag.
@@ -194,7 +196,9 @@ func (o *Op) writeInline(fs *formatState, buf *bytes.Buffer, fmTer Formatter, cu
 
 	// The first fmTer (passed in as a parameter) is the fmTer given by the Type of the Op insert.
 	if fmTer != nil {
-		fs.addFormat(o.Type, fmTer, buf)
+		fm := fmTer.Fmt()
+		fm.fm = fmTer
+		fs.addFormat(fm, buf)
 	}
 
 	for attr := range o.Attrs {
@@ -204,7 +208,9 @@ func (o *Op) writeInline(fs *formatState, buf *bytes.Buffer, fmTer Formatter, cu
 				bw.Write(buf)
 				continue
 			}
-			fs.addFormat(attr, fmTer, buf)
+			fm := fmTer.Fmt()
+			fm.fm = fmTer
+			fs.addFormat(fm, buf)
 		}
 	}
 
@@ -279,15 +285,8 @@ func (o *Op) closePrevFormats(buf *bytes.Buffer, fs *formatState, customFormats 
 
 		f = fs.open[i]
 
-		fmTer := o.getFormatter(f.keyword, customFormats)
-		if fmTer == nil {
-			continue // Really this should never be the case.
-		}
-
-		fm := fmTer.Fmt()
-
 		// If this format is not set on the current Op, close it.
-		if fm.Val != f.Val && !fm.Block {
+		if f.Val != f.Val && !f.Block {
 
 			// If we need to close a tag after which there are tags that should stay open, close the following tags for now.
 			if i < len(fs.open)-1 {
@@ -299,13 +298,13 @@ func (o *Op) closePrevFormats(buf *bytes.Buffer, fs *formatState, customFormats 
 				}
 			}
 
-			fm.close(buf)
+			f.close(buf)
 			fs.pop()
 
 		}
 
 		// If a wrapping open tag was written, decrement i to reflect the shortened format state list.
-		if fs.doFormatWrapper("close", f.keyword, fmTer, o, buf) {
+		if fs.doFormatWrapper("close", f.fm, o, buf) {
 			i--
 		}
 
@@ -313,7 +312,7 @@ func (o *Op) closePrevFormats(buf *bytes.Buffer, fs *formatState, customFormats 
 
 	// Open back up the closed tags.
 	for i := range tempClosed {
-		fs.addFormat(tempClosed[i].keyword, o.getFormatter(tempClosed[i].keyword, customFormats), buf)
+		fs.addFormat(tempClosed[i], buf)
 	}
 
 }
@@ -349,11 +348,10 @@ type FormatWrapper interface {
 }
 
 type Format struct {
-	Val     string      // the value to print
-	Place   FormatPlace // where this format is placed in the text
-	Block   bool        // indicate whether this is a block-level format (not printed until a "\n" is reached)
-	//keyword string      // the format identifier (either an insert type or attribute name)
-	fm Formatter
+	Val   string      // the value to print
+	Place FormatPlace // where this format is placed in the text
+	Block bool        // indicate whether this is a block-level format (not printed until a "\n" is reached)
+	fm    Formatter   // where this instance of a Format came from
 }
 
 func (f *Format) close(buf *bytes.Buffer) {
@@ -371,9 +369,8 @@ type formatState struct {
 
 // addFormat adds a format that the string that will be written to buf right after this will have.
 // The format is written only if it is not already opened up earlier.
-func (fs *formatState) addFormat(keyword string, fmTer Formatter, buf *bytes.Buffer) {
-
-	fm := fmTer.Fmt()
+//func (fs *formatState) addFormat(keyword string, fmTer Formatter, buf *bytes.Buffer) {
+func (fs *formatState) addFormat(fm *Format, buf *bytes.Buffer) {
 
 	// Check that the place where the format is supposed to be is valid.
 	if fm.Place < 0 || fm.Place > 2 {
@@ -387,9 +384,7 @@ func (fs *formatState) addFormat(keyword string, fmTer Formatter, buf *bytes.Buf
 		}
 	}
 
-	fs.doFormatWrapper("open", keyword, fmTer, nil, buf)
-
-	fm.keyword = keyword
+	fs.doFormatWrapper("open", fm.fm, nil, buf)
 
 	fs.open = append(fs.open, fm)
 
@@ -420,17 +415,17 @@ func (fs *formatState) pop() {
 	fs.open = fs.open[:len(fs.open)-1]
 }
 
-func (fs *formatState) doFormatWrapper(openClose string, keyword string, fmTer Formatter, o *Op, buf *bytes.Buffer) bool {
+func (fs *formatState) doFormatWrapper(openClose string, fmTer Formatter, o *Op, buf *bytes.Buffer) (wrote bool) {
 	if openClose == "open" {
 		if fw, ok := fmTer.(FormatWrapper); ok {
 			if wrapOpen := fw.PreWrap(fs.open); wrapOpen != "" {
 				fs.open = append(fs.open, &Format{
-					Val:     wrapOpen,
-					Place:   Tag,
-					keyword: keyword,
+					Val:   wrapOpen,
+					Place: Tag,
+					fm:    fmTer,
 				})
 				buf.WriteString(wrapOpen)
-				return true
+				wrote = true
 			}
 		}
 	} else if openClose == "close" {
@@ -438,11 +433,11 @@ func (fs *formatState) doFormatWrapper(openClose string, keyword string, fmTer F
 			if wrapClose := fw.PostWrap(fs.open, o); wrapClose != "" {
 				fs.pop()                   // TODO ???
 				buf.WriteString(wrapClose) // The complete closing wrap is given in wrapClose.
-				return true
+				wrote = true
 			}
 		}
 	}
-	return false
+	return
 }
 
 // If cl has something, then ClassesList returns the class attribute to add to an HTML element with a space before the

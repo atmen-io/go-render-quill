@@ -89,20 +89,18 @@ func TestFormatState_addFormat(t *testing.T) {
 			},
 			want: []*Format{
 				{
-					Val:     "h1",
-					Place:   Tag,
-					Block:   true,
-					keyword: "header",
+					Val:   "h1",
+					Place: Tag,
+					Block: true,
 				},
 			},
 		},
 		{
 			fms: []*Format{
 				{ // One format already set.
-					Val:     "h1",
-					Place:   Tag,
-					Block:   true,
-					keyword: "header",
+					Val:   "h1",
+					Place: Tag,
+					Block: true,
 				},
 			},
 			keyword: "header",
@@ -113,10 +111,9 @@ func TestFormatState_addFormat(t *testing.T) {
 			},
 			want: []*Format{
 				{ // Stay the same.
-					Val:     "h1",
-					Place:   Tag,
-					Block:   true,
-					keyword: "header",
+					Val:   "h1",
+					Place: Tag,
+					Block: true,
 				},
 			},
 		},
@@ -129,7 +126,11 @@ func TestFormatState_addFormat(t *testing.T) {
 
 		fs.open = ca.fms
 
-		fs.addFormat(ca.keyword, ca.o.getFormatter(ca.keyword, nil), buf)
+		fmTer := ca.o.getFormatter(ca.keyword, nil)
+		fm := fmTer.Fmt()
+		fm.fm = fmTer
+
+		fs.addFormat(fm, buf)
 
 		if len(ca.want) != len(fs.open) {
 			t.Errorf("unequal count of formats (index %d); got %s", i, fs.open)
@@ -146,9 +147,6 @@ func TestFormatState_addFormat(t *testing.T) {
 			if ca.want[j].Block != fs.open[j].Block {
 				t.Errorf("did not add format Block correctly (index %d); got %v", i, fs.open[j].Block)
 			}
-			if ca.want[j].keyword != fs.open[j].keyword {
-				t.Errorf("did not add format keyword correctly (index %d); got %q", i, fs.open[j].keyword)
-			}
 		}
 
 	}
@@ -156,23 +154,26 @@ func TestFormatState_addFormat(t *testing.T) {
 }
 
 func TestOp_ClosePrevFormats(t *testing.T) {
-	cases := []formatState{
-		{[]*Format{
-			{"em", Tag, false, "italic"},
-			{"strong", Tag, false, "bold"},
-		}},
-		{[]*Format{
-			{"<ul>", Tag, false, "list"}, // wrapped by FormatWrapper
-			{"li", Tag, true, "list"},
-			{"strong", Tag, false, "bold"},
-		}},
-	}
-	want := []string{"</strong></em>", "</strong></li></ul>"}
+
 	o := &Op{
 		Data: "stuff",
 		Type: "text",
 		// no attributes set
 	}
+
+	cases := []formatState{
+		{[]*Format{
+			{"em", Tag, false, o.getFormatter("italic", nil)},
+			{"strong", Tag, false, o.getFormatter("bold", nil)},
+		}},
+		{[]*Format{
+			{"<ul>", Tag, false, o.getFormatter("list", nil)}, // wrapped by FormatWrapper
+			{"li", Tag, true, o.getFormatter("list", nil)},
+			{"strong", Tag, false, o.getFormatter("bold", nil)},
+		}},
+	}
+
+	want := []string{"</strong></em>", "</strong></li></ul>"}
 
 	buf := new(bytes.Buffer)
 
