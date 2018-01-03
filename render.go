@@ -59,8 +59,13 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) ([]by
 
 			if o.Data == "\n" { // Write a block element and flush the temporary buffer.
 
-				// Copy the temporary block buffer to the final output and reset the temporary buffer.
-				o.Data = ""
+				// Avoid having empty paragraphs.
+				if tempBuf.Len() == 0 {
+					o.Data = "<br>"
+				} else {
+					o.Data = ""
+				}
+
 				o.writeBlock(fs, tempBuf, html, typeFm, customFormats)
 
 			} else { // Extract the block-terminating line feeds and write each part as its own Op.
@@ -69,18 +74,22 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) ([]by
 
 				for i := range split {
 
-					if split[i] == "" { // We're dealing with a blank line (split at \n\n) or a \n is at the very beginning or end.
+					o.Data = split[i]
 
-						//if i > 0 && i != len(split)-1 { // If the empty string represents an empty paragraph.
-						//	o.Data = "<br>"
-						//}
-						o.Data = ""
+					if i < len(split)-1 { // If the current string still has an "\n" following (its not the last in split), then it ends a block.
+
+						// Avoid having empty paragraphs.
+						if tempBuf.Len() == 0 && o.Data == "" {
+							o.Data = "<br>"
+						}
+
 						o.writeBlock(fs, tempBuf, html, typeFm, customFormats)
 
-					} else {
+					} else if o.Data != "" { // The current string (the last in split) should be written either inline or terminate another paragraph.
 
-						o.Data = split[i]
-						o.writeInline(fs, tempBuf, typeFm, customFormats)
+						//o.writeInline(fs, tempBuf, typeFm, customFormats)
+
+						 //{ // We already handled the cases where there were strings whose block ended in the rawOp.
 
 					}
 
@@ -167,9 +176,9 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 	}
 	finalBuf.WriteByte('>')
 
-	if tempBuf.Len() == 0 && o.Data == "" {
-		finalBuf.WriteString("<br>") // Avoid having empty "<p></p>" where a line break is desired.
-	}
+	//if o.Data == "" {
+	//	finalBuf.WriteString("<br>") // Avoid having empty "<p></p>" where a line break is desired.
+	//}
 
 	finalBuf.WriteString(o.Data) // Copy the data of the current Op (usually just "<br>" or nothing).
 
@@ -294,17 +303,16 @@ func (o *Op) closePrevFormats(buf *bytes.Buffer, fs *formatState, customFormats 
 				}
 			}
 
-			fs.pop()
-			fm.close(buf)
+			if !fm.Block {
+				fs.pop()
+				fm.close(buf)
+			}
 
 		}
 
-		if fw, ok := fmTer.(FormatWrapper); ok {
-			if wrapClose := fw.PostWrap(fs.open, o); wrapClose != "" {
-				fs.pop()                   // TODO ???
-				buf.WriteString(wrapClose) // The complete closing wrap is given in wrapClose.
-				i--
-			}
+		// If a wrapping open tag was written, decrement i to reflect the shortened format state list.
+		if fs.doFormatWrapper("close", f.keyword, fmTer, o, buf) {
+			i--
 		}
 
 	}
@@ -384,16 +392,7 @@ func (fs *formatState) addFormat(keyword string, fmTer Formatter, buf *bytes.Buf
 		}
 	}
 
-	if fw, ok := fmTer.(FormatWrapper); ok {
-		if wrapOpen := fw.PreWrap(fs.open); wrapOpen != "" {
-			fs.open = append(fs.open, &Format{
-				Val:     wrapOpen,
-				Place:   Tag,
-				keyword: keyword,
-			})
-			buf.WriteString(wrapOpen)
-		}
-	}
+	fs.doFormatWrapper("open", keyword, fmTer, nil, buf)
 
 	fm.keyword = keyword
 
@@ -424,6 +423,31 @@ func (fs *formatState) addFormat(keyword string, fmTer Formatter, buf *bytes.Buf
 // Pop removes the last state from the list of open states.
 func (fs *formatState) pop() {
 	fs.open = fs.open[:len(fs.open)-1]
+}
+
+func (fs *formatState) doFormatWrapper(openClose string, keyword string, fmTer Formatter, o *Op, buf *bytes.Buffer) bool {
+	if openClose == "open" {
+		if fw, ok := fmTer.(FormatWrapper); ok {
+			if wrapOpen := fw.PreWrap(fs.open); wrapOpen != "" {
+				fs.open = append(fs.open, &Format{
+					Val:     wrapOpen,
+					Place:   Tag,
+					keyword: keyword,
+				})
+				buf.WriteString(wrapOpen)
+				return true
+			}
+		}
+	} else if openClose == "close" {
+		if fw, ok := fmTer.(FormatWrapper); ok {
+			if wrapClose := fw.PostWrap(fs.open, o); wrapClose != "" {
+				fs.pop()                   // TODO ???
+				buf.WriteString(wrapClose) // The complete closing wrap is given in wrapClose.
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // If cl has something, then ClassesList returns the class attribute to add to an HTML element with a space before the

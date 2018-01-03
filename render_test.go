@@ -33,7 +33,7 @@ func TestSimple(t *testing.T) {
 			t.FailNow()
 		}
 		if string(bts) != want[i] {
-			t.Errorf("bad rendering; got: %s", bts)
+			t.Errorf("bad rendering (index %d); got: %s", i, bts)
 		}
 
 	}
