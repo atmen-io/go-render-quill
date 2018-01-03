@@ -1,5 +1,6 @@
 package quill
 
+// paragraph
 type textFormat struct{}
 
 func (*textFormat) Fmt() *Format {
@@ -14,6 +15,7 @@ func (*textFormat) HasFormat(o *Op) bool {
 	return o.Type == "text"
 }
 
+// block quote
 type blockQuoteFormat struct{}
 
 func (*blockQuoteFormat) Fmt() *Format {
@@ -28,6 +30,7 @@ func (*blockQuoteFormat) HasFormat(o *Op) bool {
 	return o.HasAttr("blockquote")
 }
 
+// header
 type headerFormat struct {
 	level string // the string "1", "2", "3", ...
 }
@@ -44,6 +47,7 @@ func (hf *headerFormat) HasFormat(o *Op) bool {
 	return o.Attrs["header"] == hf.level
 }
 
+// list
 type listFormat struct {
 	lType  string // either "ul" or "ol"
 	indent uint8  // the number of nested
@@ -92,6 +96,7 @@ var indentDepths = map[string]uint8{
 	"5": 5,
 }
 
+// text alignment
 type alignFormat struct {
 	val string
 }

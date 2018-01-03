@@ -74,57 +74,54 @@ func testPair(opsFile, htmlFile string) error {
 func TestFormatState_addFormat(t *testing.T) {
 
 	cases := []struct {
-		fms     []*Format
+		current []*Format
 		keyword string
 		o       *Op
 		want    []*Format
 	}{
 		{
-			fms:     []*Format{}, // no formats
-			keyword: "header",
+			current: []*Format{}, // no formats
+			keyword: "italic",
 			o: &Op{
 				Data:  "stuff",
 				Type:  "text",
-				Attrs: map[string]string{"header": "1"},
+				Attrs: map[string]string{"italic": "y"},
 			},
 			want: []*Format{
 				{
-					Val:   "h1",
+					Val:   "em",
 					Place: Tag,
-					Block: true,
 				},
 			},
 		},
 		{
-			fms: []*Format{
+			current: []*Format{
 				{ // One format already set.
-					Val:   "h1",
+					Val:   "em",
 					Place: Tag,
-					Block: true,
 				},
 			},
-			keyword: "header",
+			keyword: "italic",
 			o: &Op{
 				Data:  "stuff",
 				Type:  "text",
-				Attrs: map[string]string{"header": "1"},
+				Attrs: map[string]string{"italic": "y"},
 			},
 			want: []*Format{
 				{ // Stay the same.
-					Val:   "h1",
+					Val:   "em",
 					Place: Tag,
-					Block: true,
 				},
 			},
 		},
 	}
 
-	fs := new(formatState) // reused
-	buf := new(bytes.Buffer)
+	fs := new(formatState)   // reuse
+	buf := new(bytes.Buffer) // reuse
 
 	for i, ca := range cases {
 
-		fs.open = ca.fms
+		fs.open = ca.current
 
 		fmTer := ca.o.getFormatter(ca.keyword, nil)
 		fm := fmTer.Fmt()

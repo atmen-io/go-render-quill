@@ -259,13 +259,17 @@ func (o *Op) getFormatter(keyword string, customFormats func(string, *Op) Format
 			val: o.Attrs["align"],
 		}
 	case "image":
-		return new(imageFormat)
+		return new(imageFormat) // TODO
 	case "link":
-		return new(linkFormat)
+		return &linkFormat{
+			href: o.Attrs["link"],
+		}
 	case "bold":
 		return new(boldFormat)
 	case "italic":
 		return new(italicFormat)
+	case "underline":
+		return new(underlineFormat)
 	case "color":
 		return &colorFormat{
 			c: o.Attrs["color"],
@@ -281,7 +285,6 @@ func (o *Op) getFormatter(keyword string, customFormats func(string, *Op) Format
 func (o *Op) closePrevFormats(buf *bytes.Buffer, fs *formatState, customFormats func(string, *Op) Formatter) {
 
 	var f *Format // reused in the loop for convenience
-	var tempClosed []*Format
 
 	for i := len(fs.open) - 1; i >= 0; i-- { // Start with the last format opened.
 
@@ -293,10 +296,8 @@ func (o *Op) closePrevFormats(buf *bytes.Buffer, fs *formatState, customFormats 
 			// If we need to close a tag after which there are tags that should stay open, close the following tags for now.
 			if i < len(fs.open)-1 {
 				for ij := len(fs.open) - 1; ij > i; ij-- {
-					tempClosed = append(tempClosed, fs.open[ij])
 					fs.open[ij].close(buf)
 					fs.pop()
-					i--
 				}
 			}
 
@@ -310,11 +311,6 @@ func (o *Op) closePrevFormats(buf *bytes.Buffer, fs *formatState, customFormats 
 			i--
 		}
 
-	}
-
-	// Open back up the closed tags.
-	for i := range tempClosed {
-		fs.addFormat(tempClosed[i], buf)
 	}
 
 }
@@ -380,6 +376,8 @@ func (fs *formatState) addFormat(fm *Format, buf *bytes.Buffer) {
 		return
 	}
 
+	fs.doFormatWrapper("open", fm.fm, nil, buf)
+
 	// Check if this format is already opened.
 	for i := range fs.open {
 		if fs.open[i].Place == fm.Place && fs.open[i].Val == fm.Val {
@@ -387,12 +385,10 @@ func (fs *formatState) addFormat(fm *Format, buf *bytes.Buffer) {
 		}
 	}
 
-	fs.doFormatWrapper("open", fm.fm, nil, buf)
-
-	fs.open = append(fs.open, fm)
-
 	// Do not write block-level styles (those are written by o.writeBlock after being merged).
 	if !fm.Block {
+
+		fs.open = append(fs.open, fm)
 
 		buf.WriteByte('<')
 
