@@ -51,3 +51,9 @@ var indentDepths = map[string]uint8{
 	"4": 4,
 	"5": 5,
 }
+
+type alignFormat struct {
+	align string
+}
+
+func (af *alignFormat) Format() (string, StyleFormat) { return af.align, Class }

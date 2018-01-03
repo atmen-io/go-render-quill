@@ -64,8 +64,8 @@ func TestRawOp_makeOp(t *testing.T) {
 			},
 		},
 		{
-			Data: "url-or-base64",
-			Type: "image",
+			Data:  "url-or-base64",
+			Type:  "image",
 			Attrs: make(map[string]string), // like in code (already initialized)
 		},
 	}

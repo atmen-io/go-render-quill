@@ -71,10 +71,10 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) ([]by
 
 					if split[i] == "" { // We're dealing with a blank line (split at \n\n) or a \n is at the very beginning or end.
 
-						if i > 0 && i != len(split)-1 { // If the empty string represents an empty paragraph.
-							o.Data = "<br>"
-						}
-
+						//if i > 0 && i != len(split)-1 { // If the empty string represents an empty paragraph.
+						//	o.Data = "<br>"
+						//}
+						o.Data = ""
 						o.writeBlock(fs, tempBuf, html, typeFm, customFormats)
 
 					} else {
@@ -111,6 +111,8 @@ type Op struct {
 // block is reached (the Op with the "\n" character holds the information about the block element).
 func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.Buffer, typeFm Formatter, customFormats func(string, *Op) Formatter) {
 
+	fmt.Printf("WRITING BLOCK: %q \n", *o)
+
 	// Close the inline formats opened within the block.
 	o.closePrevFormats(tempBuf, fs, customFormats)
 
@@ -121,13 +123,13 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 		fs      formatState // the formats for the block element itself
 	}
 
-	// Open the tag for the Op if the Op Type calls for a tag.
+	// Check if the Op Type calls for a tag.
 	tVal, tPlace := typeFm.Format()
 	if tPlace == Tag && tVal != "" {
 		blockWrap.tagName = tVal
 	}
 
-	// If an opening tag has not been written, it may be specified in an attribute.
+	// If an opening tag has not been written, it may be specified by an attribute.
 	for attr := range o.Attrs {
 		attrFm := o.getFormatter(attr, customFormats)
 		if attrFm == nil {
@@ -137,7 +139,8 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 			// If an attribute format wants to write the entire body, let it write the body.
 			fw.Write(tempBuf)
 		}
-		o.addAttr(&blockWrap.fs, attrFm, tempBuf)
+		// Save the desired attributes without writing them anywhere.
+		o.addAttr(&blockWrap.fs, attrFm, &bytes.Buffer{})
 	}
 
 	// Merge all formats into a single tag.
@@ -169,7 +172,7 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 
 	finalBuf.Write(tempBuf.Bytes())
 
-	o.closePrevFormats(finalBuf, &blockWrap.fs, customFormats)
+	//o.closePrevFormats(finalBuf, &blockWrap.fs, customFormats)
 
 	closeTag(finalBuf, blockWrap.tagName)
 
@@ -178,6 +181,8 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 }
 
 func (o *Op) writeInline(fs *formatState, buf *bytes.Buffer, fm Formatter, customFormats func(string, *Op) Formatter) {
+
+	fmt.Printf("WRITING INLINE: %q \n", *o)
 
 	o.closePrevFormats(buf, fs, customFormats)
 
@@ -234,6 +239,10 @@ func (o *Op) getFormatter(keyword string, customFormats func(string, *Op) Format
 		return lf
 	case "blockquote":
 		return new(blockQuoteFormat)
+	case "align":
+		return &alignFormat{
+			align: "align-" + o.Attrs["align"],
+		}
 	case "image":
 		return new(imageFormat)
 	case "link":
@@ -409,14 +418,6 @@ func ClassesList(cl []string) (classAttr string) {
 		classAttr = " class=" + strconv.Quote(strings.Join(cl, " "))
 	}
 	return
-}
-
-// openTagOrNot writes an "<" and string s to the buffer if s is not blank.
-func openTagOrNot(buf *bytes.Buffer, s string) {
-	if s != "" {
-		buf.WriteByte('<')
-		buf.WriteString(s)
-	}
 }
 
 // closeTag writes a complete closing tag.

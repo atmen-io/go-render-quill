@@ -45,7 +45,7 @@ type linkFormat struct {
 func (*linkFormat) Format() (_ string, _ StyleFormat) { return } // Wrapper only.
 
 func (lf *linkFormat) PreWrap(_ []string) string {
-	return "<a href=" + strconv.Quote(lf.href) + ` target="_blank">`
+	return `<a href=` + strconv.Quote(lf.href) + ` target="_blank">`
 }
 
 func (lf *linkFormat) PostWrap(openedTags []string, o *Op) string {

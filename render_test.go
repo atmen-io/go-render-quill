@@ -7,14 +7,43 @@ import (
 	"testing"
 )
 
+func TestSimple(t *testing.T) {
+
+	cases := []string{
+		`[{"insert": "\n"}]`,
+		`[{"insert":"line1\nline2\n"}]`,
+		`[{"insert": "line1\n\nline3\n"}]`,
+	}
+
+	want := []string{
+		"<p></p>",
+		"<p>line1</p><p>line2</p>",
+		"<p>line1</p><p><br></p><p>line3</p>",
+	}
+
+	for i := range cases {
+
+		bts, err := Render([]byte(cases[i]))
+		if err != nil {
+			t.Errorf("%s", err)
+			t.FailNow()
+		}
+		if string(bts) != want[i] {
+			t.Errorf("bad rendering; got: %s", bts)
+		}
+
+	}
+
+}
+
 func TestOps1(t *testing.T) {
 	if err := testPair("ops1.json", "ops1.html"); err != nil {
 		t.Errorf("%s", err)
 	}
 }
 
-func TestEmpty(t *testing.T) {
-	if err := testPair("empty.json", "empty.html"); err != nil {
+func TestNested(t *testing.T) {
+	if err := testPair("nested.json", "nested.html"); err != nil {
 		t.Errorf("%s", err)
 	}
 }
