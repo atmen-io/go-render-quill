@@ -126,7 +126,7 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 	// Check if the Op Type calls for a tag on the block.
 	fm := typeFm.Fmt()
 	if fm.Block && fm.Place == Tag && fm.Val != "" {
-		blockWrap.tagName = fm.Val
+		blockWrap.tagName = fm.Val // Default block tag to format specified by the Type.
 	}
 
 	// If an opening tag has not been written, it may be specified by an attribute.
@@ -148,8 +148,8 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 		val := blockWrap.fs.open[i].Val
 		switch blockWrap.fs.open[i].Place {
 		case Tag:
-			if fm.Block && blockWrap.tagName == "" {
-				blockWrap.tagName = val
+			if fm.Block && val != "" {
+				blockWrap.tagName = val // Override value set by Type.
 			}
 		case Class:
 			blockWrap.classes = append(blockWrap.classes, val)
@@ -254,7 +254,9 @@ func (o *Op) getFormatter(keyword string, customFormats func(string, *Op) Format
 	case "italic":
 		return new(italicFormat)
 	case "color":
-		return new(colorFormat)
+		return &colorFormat{
+			c: "color:" + o.Attrs["color"] + ";",
+		}
 	}
 
 	return nil
@@ -406,10 +408,10 @@ func (fs *formatState) addFormat(keyword string, fmTer Formatter, buf *bytes.Buf
 		case Tag:
 			buf.WriteString(fm.Val)
 		case Class:
-			buf.WriteString("<span class=")
+			buf.WriteString("span class=")
 			buf.WriteString(strconv.Quote(fm.Val))
 		case Style:
-			buf.WriteString("<span style=")
+			buf.WriteString("span style=")
 			buf.WriteString(strconv.Quote(fm.Val))
 		}
 

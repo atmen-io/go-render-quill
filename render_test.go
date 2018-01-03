@@ -13,12 +13,16 @@ func TestSimple(t *testing.T) {
 		`[{"insert": "\n"}]`,
 		`[{"insert": "line1\nline2\n"}]`,
 		`[{"insert": "line1\n\nline3\n"}]`,
+		`[{"insert": "bkqt"}, {"attributes": {"blockquote": true}, "insert": "\n"}]`,
+		`[{"attributes": {"color": "#a10000"}, "insert": "colored"}, {"insert": "\n"}]`,
 	}
 
 	want := []string{
 		"<p><br></p>",
 		"<p>line1</p><p>line2</p>",
 		"<p>line1</p><p><br></p><p>line3</p>",
+		"<blockquote>bkqt</blockquote>",
+		`<p><span style="color:#a10000;">colored</span></p>`,
 	}
 
 	for i := range cases {
@@ -76,18 +80,18 @@ func TestFormatState_addFormat(t *testing.T) {
 		want    []*Format
 	}{
 		{
-			fms: []*Format{}, // no formats
+			fms:     []*Format{}, // no formats
 			keyword: "header",
 			o: &Op{
 				Data:  "stuff",
 				Type:  "text",
-				Attrs: map[string]string{"header":"1"},
+				Attrs: map[string]string{"header": "1"},
 			},
 			want: []*Format{
 				{
-					Val: "h1",
-					Place: Tag,
-					Block: true,
+					Val:     "h1",
+					Place:   Tag,
+					Block:   true,
 					keyword: "header",
 				},
 			},
@@ -95,9 +99,9 @@ func TestFormatState_addFormat(t *testing.T) {
 		{
 			fms: []*Format{
 				{ // One format already set.
-					Val: "h1",
-					Place: Tag,
-					Block: true,
+					Val:     "h1",
+					Place:   Tag,
+					Block:   true,
 					keyword: "header",
 				},
 			},
@@ -105,13 +109,13 @@ func TestFormatState_addFormat(t *testing.T) {
 			o: &Op{
 				Data:  "stuff",
 				Type:  "text",
-				Attrs: map[string]string{"header":"1"},
+				Attrs: map[string]string{"header": "1"},
 			},
 			want: []*Format{
 				{ // Stay the same.
-					Val: "h1",
-					Place: Tag,
-					Block: true,
+					Val:     "h1",
+					Place:   Tag,
+					Block:   true,
 					keyword: "header",
 				},
 			},
