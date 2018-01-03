@@ -137,13 +137,12 @@ type Op struct {
 func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.Buffer, newFms []Formatter) {
 
 	// Close the inline formats opened within the block.
-	o.closePrevFormats(tempBuf, fs)
+	fs.closePrevious(tempBuf, o)
 
 	var blockWrap struct {
 		tagName string
 		classes []string
 		style   string
-		fs      formatState // the formats for the block element itself
 	}
 
 	if len(newFms) == 0 {
@@ -157,33 +156,21 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 	}
 
 	// If an opening tag has not been written, it may be specified by an attribute.
+	// Merge all formats into a single tag.
 	for i := range newFms {
 		fm := newFms[i].Fmt()
-
-	}
-	//for attr := range o.Attrs {
-	//	fmTer := o.getFormatter(attr, customFormats)
-	//	if fmTer == nil {
-	//		continue // not returning an error
-	//	}
-	//	fm = fmTer.Fmt()
-	//	fm.fm = fmTer
-	//	// Save the desired attributes without writing them anywhere.
-	//	blockWrap.fs.addFormat(fm, &bytes.Buffer{})
-	//}
-
-	// Merge all formats into a single tag.
-	for i := range blockWrap.fs.open {
-		val := blockWrap.fs.open[i].Val
-		switch blockWrap.fs.open[i].Place {
-		case Tag:
-			if fm.Block && val != "" {
-				blockWrap.tagName = val // Override value set by Type.
+		if fm.Block {
+			val := fm.Val
+			switch fm.Place {
+			case Tag:
+				if fm.Block && val != "" {
+					blockWrap.tagName = val // Override value set by Type.
+				}
+			case Class:
+				blockWrap.classes = append(blockWrap.classes, val)
+			case Style:
+				blockWrap.style += val
 			}
-		case Class:
-			blockWrap.classes = append(blockWrap.classes, val)
-		case Style:
-			blockWrap.style += val
 		}
 	}
 
@@ -212,11 +199,12 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 
 func (o *Op) writeInline(fs *formatState, buf *bytes.Buffer, newFms []Formatter) {
 
-	o.closePrevFormats(buf, fs)
+	fs.closePrevious(buf, o)
 
 	for i := range newFms { // TODO: for consistency, maybe first sort the formats alphabetically
 		fm := newFms[i].Fmt()
-		if fm != nil && !fm.Block {
+		if !fm.Block {
+			fm.fm = newFms[i]
 			fs.addFormat(fm, buf)
 		}
 	}
@@ -264,7 +252,9 @@ func (o *Op) getFormatter(keyword string, customFormats func(string, *Op) Format
 			val: o.Attrs["align"],
 		}
 	case "image":
-		return new(imageFormat) // TODO
+		return &imageFormat{
+			src: o.Data,
+		}
 	case "link":
 		return &linkFormat{
 			href: o.Attrs["link"],
@@ -282,34 +272,6 @@ func (o *Op) getFormatter(keyword string, customFormats func(string, *Op) Format
 	}
 
 	return nil
-
-}
-
-// closePrevFormats checks if the previous Op opened any formats that are not set on the current Op and closes those formats
-// in the opposite order in which they were opened.
-func (o *Op) closePrevFormats(buf *bytes.Buffer, fs *formatState) {
-
-	for i := len(fs.open) - 1; i >= 0; i-- { // Start with the last format opened.
-
-		// If this format is not set on the current Op, close it.
-		if !fs.open[i].fm.HasFormat(o) && !fs.open[i].Block {
-
-			// If we need to close a tag after which there are tags that should stay open, close the following tags for now.
-			if i < len(fs.open)-1 {
-				for ij := len(fs.open) - 1; ij > i; ij-- {
-					fs.open[ij].close(buf)
-					fs.pop()
-				}
-			}
-
-			fs.open[i].close(buf)
-			fs.pop()
-
-		}
-
-		fs.doFormatWrapper("close", fs.open[i].fm, o, buf)
-
-	}
 
 }
 

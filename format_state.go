@@ -20,6 +20,34 @@ func (fs *formatState) hasSet(fm *Format) bool {
 	return false
 }
 
+// closePrevious checks if the previous ops opened any formats that are not set on the current Op and closes those formats
+// in the opposite order in which they were opened.
+func (fs *formatState) closePrevious(buf *bytes.Buffer, o *Op) {
+
+	for i := len(fs.open) - 1; i >= 0; i-- { // Start with the last format opened.
+
+		// If this format is not set on the current Op, close it.
+		if !fs.open[i].fm.HasFormat(o) && !fs.open[i].Block {
+
+			// If we need to close a tag after which there are tags that should stay open, close the following tags for now.
+			if i < len(fs.open)-1 {
+				for ij := len(fs.open) - 1; ij > i; ij-- {
+					fs.open[ij].close(buf)
+					fs.pop()
+				}
+			}
+
+			fs.open[i].close(buf)
+			fs.pop()
+
+		}
+
+		fs.doFormatWrapper("close", fs.open[i].fm, o, buf)
+
+	}
+
+}
+
 // addFormat adds a format that the string that will be written to buf right after this will have.
 // Before calling addFormat, check if the Format is already opened up earlier.
 // Do not use addFormat to write block-level styles (those are written by o.writeBlock after being merged).
