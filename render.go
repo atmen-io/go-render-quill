@@ -77,7 +77,6 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) ([]by
 					o.Data = split[i]
 
 					// If the current o.Data still has an "\n" following (its not the last in split), then it ends a block.
-					// If the last element in split is just "" then the last character in the rawOp was a "\n".
 					if i < len(split)-1 {
 
 						// Avoid having empty paragraphs.
@@ -87,6 +86,8 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) ([]by
 
 						o.writeBlock(fs, tempBuf, html, typeFm, customFormats)
 
+					} else if o.Data != "" { // If the last element in split is just "" then the last character in the rawOp was a "\n".
+						o.writeInline(fs, tempBuf, typeFm, customFormats)
 					}
 
 				}
@@ -140,9 +141,10 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 		if fmTer == nil {
 			continue // not returning an error
 		}
-		if fw, ok := fmTer.(FormatWriter); ok {
+		if wr, ok := fmTer.(FormatWriter); ok {
 			// If an attribute format wants to write the entire body, let it write the body.
-			fw.Write(tempBuf)
+			wr.Write(tempBuf)
+			continue
 		}
 		fm := fmTer.Fmt()
 		fm.fm = fmTer
@@ -165,24 +167,24 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 		}
 	}
 
-	finalBuf.WriteByte('<')
-	finalBuf.WriteString(blockWrap.tagName)
-	finalBuf.WriteString(ClassesList(blockWrap.classes))
-	if blockWrap.style != "" {
-		finalBuf.WriteString(" style=")
-		finalBuf.WriteString(strconv.Quote(blockWrap.style))
+	if blockWrap.tagName != "" {
+		finalBuf.WriteByte('<')
+		finalBuf.WriteString(blockWrap.tagName)
+		finalBuf.WriteString(ClassesList(blockWrap.classes))
+		if blockWrap.style != "" {
+			finalBuf.WriteString(" style=")
+			finalBuf.WriteString(strconv.Quote(blockWrap.style))
+		}
+		finalBuf.WriteByte('>')
 	}
-	finalBuf.WriteByte('>')
 
-	//if o.Data == "" {
-	//	finalBuf.WriteString("<br>") // Avoid having empty "<p></p>" where a line break is desired.
-	//}
+	finalBuf.Write(tempBuf.Bytes()) // Copy the temporary buffer to the final output.
 
-	finalBuf.WriteString(o.Data) // Copy the data of the current Op (usually just "<br>" or nothing).
+	finalBuf.WriteString(o.Data) // Copy the data of the current Op (usually just "<br>" or blank).
 
-	finalBuf.Write(tempBuf.Bytes())
-
-	closeTag(finalBuf, blockWrap.tagName)
+	if blockWrap.tagName != "" {
+		closeTag(finalBuf, blockWrap.tagName)
+	}
 
 	tempBuf.Reset()
 
@@ -204,8 +206,8 @@ func (o *Op) writeInline(fs *formatState, buf *bytes.Buffer, fmTer Formatter, cu
 	for attr := range o.Attrs {
 		fmTer = o.getFormatter(attr, customFormats)
 		if fmTer != nil {
-			if bw, ok := fmTer.(FormatWriter); ok {
-				bw.Write(buf)
+			if wr, ok := fmTer.(FormatWriter); ok {
+				wr.Write(buf)
 				continue
 			}
 			fm := fmTer.Fmt()
@@ -238,7 +240,7 @@ func (o *Op) getFormatter(keyword string, customFormats func(string, *Op) Format
 		return new(textFormat)
 	case "header":
 		return &headerFormat{
-			h: "h" + o.Attrs["header"],
+			level: o.Attrs["header"],
 		}
 	case "list":
 		lf := &listFormat{
@@ -254,7 +256,7 @@ func (o *Op) getFormatter(keyword string, customFormats func(string, *Op) Format
 		return new(blockQuoteFormat)
 	case "align":
 		return &alignFormat{
-			align: "align-" + o.Attrs["align"],
+			val: o.Attrs["align"],
 		}
 	case "image":
 		return new(imageFormat)
@@ -266,7 +268,7 @@ func (o *Op) getFormatter(keyword string, customFormats func(string, *Op) Format
 		return new(italicFormat)
 	case "color":
 		return &colorFormat{
-			c: "color:" + o.Attrs["color"] + ";",
+			c: o.Attrs["color"],
 		}
 	}
 
@@ -286,7 +288,7 @@ func (o *Op) closePrevFormats(buf *bytes.Buffer, fs *formatState, customFormats 
 		f = fs.open[i]
 
 		// If this format is not set on the current Op, close it.
-		if f.Val != f.Val && !f.Block {
+		if !f.fm.HasFormat(o) && !f.Block {
 
 			// If we need to close a tag after which there are tags that should stay open, close the following tags for now.
 			if i < len(fs.open)-1 {
@@ -331,7 +333,8 @@ const (
 )
 
 type Formatter interface {
-	Fmt() *Format // Format gives the string to write and where to place it.
+	Fmt() *Format       // Format gives the string to write and where to place it.
+	HasFormat(*Op) bool // Say if the Op has the Format that Fmt returns.
 }
 
 // A Formatter may also be a FormatWriter if it wishes to write the body of the Op in some custom way (useful for embeds).

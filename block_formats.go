@@ -10,6 +10,10 @@ func (*textFormat) Fmt() *Format {
 	}
 }
 
+func (*textFormat) HasFormat(o *Op) bool {
+	return o.Type == "text"
+}
+
 type blockQuoteFormat struct{}
 
 func (*blockQuoteFormat) Fmt() *Format {
@@ -20,16 +24,24 @@ func (*blockQuoteFormat) Fmt() *Format {
 	}
 }
 
+func (*blockQuoteFormat) HasFormat(o *Op) bool {
+	return o.HasAttr("blockquote")
+}
+
 type headerFormat struct {
-	h string // the string "h1", "h2", ...
+	level string // the string "1", "2", "3", ...
 }
 
 func (hf *headerFormat) Fmt() *Format {
 	return &Format{
-		Val:   hf.h,
+		Val:   "h" + hf.level,
 		Place: Tag,
 		Block: true,
 	}
+}
+
+func (hf *headerFormat) HasFormat(o *Op) bool {
+	return o.Attrs["header"] == hf.level
 }
 
 type listFormat struct {
@@ -43,6 +55,10 @@ func (lf *listFormat) Fmt() *Format {
 		Place: Tag,
 		Block: true,
 	}
+}
+
+func (lf *listFormat) HasFormat(o *Op) bool {
+	return o.HasAttr("list")
 }
 
 // listFormat implements the FormatWrapper interface.
@@ -77,13 +93,17 @@ var indentDepths = map[string]uint8{
 }
 
 type alignFormat struct {
-	align string
+	val string
 }
 
 func (af *alignFormat) Fmt() *Format {
 	return &Format{
-		Val:   af.align,
+		Val:   "align-" + af.val,
 		Place: Class,
 		Block: true,
 	}
+}
+
+func (af *alignFormat) HasFormat(o *Op) bool {
+	return o.Attrs["align"] == af.val
 }
