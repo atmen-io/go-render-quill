@@ -59,7 +59,7 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) ([]by
 
 			if o.Data == "\n" { // Write a block element and flush the temporary buffer.
 
-				// Avoid having empty paragraphs.
+				// Avoid empty paragraphs and "\n" in the output.
 				if tempBuf.Len() == 0 {
 					o.Data = "<br>"
 				} else {
@@ -76,7 +76,9 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) ([]by
 
 					o.Data = split[i]
 
-					if i < len(split)-1 { // If the current string still has an "\n" following (its not the last in split), then it ends a block.
+					// If the current o.Data still has an "\n" following (its not the last in split), then it ends a block.
+					// If the last element in split is just "" then the last character in the rawOp was a "\n".
+					if i < len(split)-1 {
 
 						// Avoid having empty paragraphs.
 						if tempBuf.Len() == 0 && o.Data == "" {
@@ -84,12 +86,6 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) ([]by
 						}
 
 						o.writeBlock(fs, tempBuf, html, typeFm, customFormats)
-
-					} else if o.Data != "" { // The current string (the last in split) should be written either inline or terminate another paragraph.
-
-						//o.writeInline(fs, tempBuf, typeFm, customFormats)
-
-						 //{ // We already handled the cases where there were strings whose block ended in the rawOp.
 
 					}
 
@@ -120,7 +116,7 @@ type Op struct {
 // block is reached (the Op with the "\n" character holds the information about the block element).
 func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.Buffer, typeFm Formatter, customFormats func(string, *Op) Formatter) {
 
-	fmt.Printf("WRITING BLOCK: %q \n", *o)
+	//fmt.Printf("WRITING BLOCK: %q \n", *o)
 
 	// Close the inline formats opened within the block.
 	o.closePrevFormats(tempBuf, fs, customFormats)
@@ -192,7 +188,7 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 
 func (o *Op) writeInline(fs *formatState, buf *bytes.Buffer, fmTer Formatter, customFormats func(string, *Op) Formatter) {
 
-	fmt.Printf("WRITING INLINE: %q \n", *o)
+	//fmt.Printf("WRITING INLINE: %q \n", *o)
 
 	o.closePrevFormats(buf, fs, customFormats)
 
@@ -291,22 +287,20 @@ func (o *Op) closePrevFormats(buf *bytes.Buffer, fs *formatState, customFormats 
 		fm := fmTer.Fmt()
 
 		// If this format is not set on the current Op, close it.
-		if !o.HasAttr(f.keyword) || (fm.Val != f.Val) {
+		if fm.Val != f.Val && !fm.Block {
 
 			// If we need to close a tag after which there are tags that should stay open, close the following tags for now.
 			if i < len(fs.open)-1 {
 				for ij := len(fs.open) - 1; ij > i; ij-- {
 					tempClosed = append(tempClosed, fs.open[ij])
-					fs.pop()
 					fs.open[ij].close(buf)
+					fs.pop()
 					i--
 				}
 			}
 
-			if !fm.Block {
-				fs.pop()
-				fm.close(buf)
-			}
+			fm.close(buf)
+			fs.pop()
 
 		}
 
@@ -358,7 +352,8 @@ type Format struct {
 	Val     string      // the value to print
 	Place   FormatPlace // where this format is placed in the text
 	Block   bool        // indicate whether this is a block-level format (not printed until a "\n" is reached)
-	keyword string      // the format identifier (either an insert type or attribute name)
+	//keyword string      // the format identifier (either an insert type or attribute name)
+	fm Formatter
 }
 
 func (f *Format) close(buf *bytes.Buffer) {

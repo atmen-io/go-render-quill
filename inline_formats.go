@@ -64,7 +64,7 @@ func (lf *linkFormat) PreWrap(_ []*Format) string {
 }
 
 func (lf *linkFormat) PostWrap(_ []*Format, o *Op) string {
-	if o.HasAttr("link") {
+	if o.HasAttr("link") && o.Attrs["link"] == lf.href {
 		return ""
 	}
 	return "</a>"
