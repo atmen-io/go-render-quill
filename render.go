@@ -107,7 +107,7 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) (html
 
 	// Before writing out the final buffer, close the last remaining tags set by a FormatWrapper.
 	// The FormatWrapper should see that all styling is now done.
-	fs.closePrevious(finalBuf, blankOp())
+	fs.closePrevious(finalBuf, blankOp(), true)
 
 	html = finalBuf.Bytes()
 	return
@@ -154,7 +154,7 @@ type Op struct {
 func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.Buffer, newFms []*Format) {
 
 	// Close the inline formats opened within the block.
-	fs.closePrevious(tempBuf, o)
+	fs.closePrevious(tempBuf, o, true)
 
 	var block struct {
 		tagName string
@@ -186,8 +186,9 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 		}
 		// Write out all of FormatWrapper opening text (if there is any).
 		if fm.wrap && fm.fm.(FormatWrapper).Open(fs.open, o) {
+			fm.Val = fm.wrapPre
 			fs.add(fm)
-			finalBuf.WriteString(fm.wrapPre)
+			finalBuf.WriteString(fm.Val)
 		}
 	}
 
@@ -211,7 +212,7 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 	}
 
 	// Write out the closes by FormatWrapper formats, starting from the last written.
-	fs.closePrevious(finalBuf, o)
+	fs.closePrevious(finalBuf, o, true)
 
 	tempBuf.Reset()
 
@@ -219,7 +220,7 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 
 func (o *Op) writeInline(fs *formatState, buf *bytes.Buffer, newFms []*Format) {
 
-	fs.closePrevious(buf, o)
+	fs.closePrevious(buf, o, false)
 
 	// Save the formats being written now separately from fs.
 	addNow := &formatState{make([]*Format, 0, len(newFms))}
@@ -230,6 +231,7 @@ func (o *Op) writeInline(fs *formatState, buf *bytes.Buffer, newFms []*Format) {
 			if f.wrap {
 				// Add FormatWrapper formats only if they need to be written now.
 				if f.fm.(FormatWrapper).Open(fs.open, o) {
+					f.Val = f.wrapPre
 					addNow.add(f)
 				}
 			} else {
@@ -331,9 +333,9 @@ type FormatWriter interface {
 // A FormatWrapper wraps text with additional text of any kind (such as "<ul>" for lists).
 type FormatWrapper interface {
 	Formatter
-	Wrap() (pre, post string)  // Say what opening and closing wraps will be written.
-	Open([]*Format, *Op) bool  // Given the open formats and current Op, say if to write the pre string.
-	Close([]*Format, *Op) bool // Given the open formats and current Op, say if to write the post string.
+	Wrap() (pre, post string)        // Say what opening and closing wraps will be written.
+	Open([]*Format, *Op) bool        // Given the open formats and current Op, say if to write the pre string.
+	Close([]*Format, *Op, bool) bool // Given the open formats, current Op, and if the Op closes a block, say if to write the post string.
 }
 
 // A Format specifies how styling to text is applied. The Val string is what is printed in the place given by Place. Block indicates
@@ -349,7 +351,7 @@ type Format struct {
 
 // A blankOp can be used to signal any FormatWrapper formats to write the final closing wrap.
 func blankOp() *Op {
-	return &Op{"\n", "text", make(map[string]string)}
+	return &Op{"", "text", make(map[string]string)}
 }
 
 // If cl has something, then classesList returns the class attribute to add to an HTML element with a space before the

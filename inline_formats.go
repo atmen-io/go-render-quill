@@ -82,7 +82,7 @@ func (lf *linkFormat) Open(_ []*Format, _ *Op) bool {
 	return true // This format will only appear when there is a "link" attribute set.
 }
 
-func (lf *linkFormat) Close(_ []*Format, o *Op) bool {
+func (lf *linkFormat) Close(_ []*Format, o *Op, _ bool) bool {
 	return o.Attrs["link"] != lf.href
 }
 

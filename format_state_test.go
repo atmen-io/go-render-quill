@@ -109,7 +109,7 @@ func TestFormatState_closePrevious(t *testing.T) {
 
 	for i := range cases {
 
-		cases[i].closePrevious(buf, o)
+		cases[i].closePrevious(buf, o, false)
 		got := buf.String()
 		if got != want[i] {
 			t.Errorf("closed formats wrong (index %d); wanted %q; got %q\n", i, want[i], got)

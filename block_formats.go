@@ -1,7 +1,5 @@
 package quill
 
-import "strings"
-
 // paragraph
 type textFormat struct{}
 
@@ -80,24 +78,12 @@ func (lf *listFormat) Open(open []*Format, o *Op) bool {
 			count++
 		}
 	}
-	if count <= lf.indent {
-		return true
-	}
-	return false
+	return count <= lf.indent
 }
 
 // listFormat implements the FormatWrapper interface.
-func (lf *listFormat) Close(open []*Format, o *Op) bool {
-	if !o.HasAttr("list") && strings.IndexByte(o.Data, '\n') != -1 {
-		return true
-	}
-	var count uint8
-	for i := range open {
-		if open[i].Place == Tag && open[i].Val == lf.lType {
-			count++
-		}
-	} // TODO
-	return false
+func (lf *listFormat) Close(open []*Format, o *Op, doingBlock bool) bool {
+	return !o.HasAttr("list") && doingBlock
 }
 
 // indentDepths gives either the indent amount of a list or 0 if there is no indenting.

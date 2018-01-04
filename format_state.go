@@ -23,7 +23,7 @@ func (fs *formatState) hasSet(fm *Format) bool {
 
 // closePrevious checks if the previous ops opened any formats that are not set on the current Op and closes those formats
 // in the opposite order in which they were opened.
-func (fs *formatState) closePrevious(buf *bytes.Buffer, o *Op) {
+func (fs *formatState) closePrevious(buf *bytes.Buffer, o *Op, doingBlock bool) {
 
 	closedTemp := &formatState{}
 
@@ -32,7 +32,7 @@ func (fs *formatState) closePrevious(buf *bytes.Buffer, o *Op) {
 		f := fs.open[i]
 
 		// If this format is not set on the current Op, close it.
-		if (!f.wrap && !f.fm.HasFormat(o)) || (f.wrap && f.fm.(FormatWrapper).Close(fs.open, o)) {
+		if (!f.wrap && !f.fm.HasFormat(o)) || (f.wrap && f.fm.(FormatWrapper).Close(fs.open, o, doingBlock)) {
 
 			// If we need to close a tag after which there are tags that should stay open, close the following tags for now.
 			if i < len(fs.open)-1 {
@@ -85,7 +85,7 @@ func (fs *formatState) writeFormats(buf *bytes.Buffer) {
 	for i := range fs.open {
 
 		if fs.open[i].wrap {
-			buf.WriteString(fs.open[i].wrapPre) // The complete opening or closing wrap is given.
+			buf.WriteString(fs.open[i].Val) // The complete opening or closing wrap is given.
 			continue
 		}
 
