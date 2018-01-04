@@ -18,6 +18,8 @@ func TestSimple(t *testing.T) {
 		`[{"insert":"abc "},{"attributes":{"bold":true},"insert":"bld"},{"attributes":{"list":"bullet"},"insert":"\n"}]`,
 		`[  {"attributes":{"bold":true,"italic":true},"insert":"bbii "},
 			{"attributes":{"italic":true},"insert":"ii"},{"insert":"\n"}]`, // ordering alphabetically
+		`[{"insert":{"image":"source-url"}},{"insert":"\n"}]`, // image (FormatWriter)
+		`[{"insert":"text "},{"insert":{"image":"source-url"}},{"insert":" more text\n"}]`,
 	}
 
 	want := []string{
@@ -28,6 +30,8 @@ func TestSimple(t *testing.T) {
 		`<p><span style="color:#a10000;">colored</span></p>`,
 		"<ul><li>abc <strong>bld</strong></li></ul>",
 		"<p><em><strong>bbii </strong>ii</em></p>", // not the Quill.js style of "<p><strong><em>bbii </em></strong><em>ii</em></p>"
+		`<p><img src="source-url"></p>`,
+		`<p>text <img src="source-url"> more text</p>`,
 	}
 
 	for i := range cases {

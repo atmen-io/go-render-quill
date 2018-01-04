@@ -73,7 +73,7 @@ func (lf *listFormat) PreWrap(openTags []*Format) string {
 			count++
 		}
 	}
-	if count <= lf.indent { // TODO
+	if count <= lf.indent {
 		return "<" + lf.lType + ">"
 	}
 	return ""

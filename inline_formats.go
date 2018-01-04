@@ -68,7 +68,7 @@ type linkFormat struct {
 	href string
 }
 
-func (*linkFormat) Fmt() *Format { return new(Format) } // a wrapper only
+func (*linkFormat) Fmt() *Format { return nil } // a wrapper only
 
 func (lf *linkFormat) HasFormat(o *Op) bool {
 	return o.Attrs["link"] == lf.href
@@ -90,7 +90,7 @@ type imageFormat struct {
 	src, alt string
 }
 
-func (*imageFormat) Fmt() *Format { return new(Format) } // The body contains the entire element.
+func (*imageFormat) Fmt() *Format { return nil } // The body contains the entire element.
 
 func (imf *imageFormat) HasFormat(o *Op) bool {
 	return o.Type == "image" && o.Data == imf.src

@@ -39,7 +39,6 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) (html
 	)
 	o.Attrs = make(map[string]string, 3) // initialize once here only
 
-opLoop:
 	for i := range raw {
 
 		if err = raw[i].makeOp(o); err != nil {
@@ -64,11 +63,16 @@ opLoop:
 			}
 		}
 
-		// Check if any of the formats is a FormatWriter. If any is, just write it out and continue to the next Op.
+		// Check if any of the formats is a FormatWriter. If any is, just write it out.
 		for i := range fms {
-			if wr, ok := fms[i].(FormatWriter); ok {
-				wr.Write(finalBuf)
-				continue opLoop
+			fm := fms[i].Fmt()
+			if fm == nil {
+				if wr, ok := fms[i].(FormatWriter); ok {
+					wr.Write(tempBuf)
+					o.Data = ""
+				}
+				// Delete this Formatter from fms (it does not do anything else).
+				fms = append(fms[0:i], fms[i+1:]...)
 			}
 		}
 
