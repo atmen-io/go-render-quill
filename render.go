@@ -122,6 +122,10 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) (html
 
 	}
 
+	// Before writing out the final buffer, close the last remaining tags set by a FormatWrapper.
+	// The FormatWrapper should see that all styling is now done.
+	fs.closePrevious(finalBuf, blankOp())
+
 	html = finalBuf.Bytes()
 	return
 
@@ -143,7 +147,7 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 	// Close the inline formats opened within the block.
 	fs.closePrevious(tempBuf, o)
 
-	var blockWrap struct {
+	var block struct {
 		tagName string
 		classes []string
 		style   string
@@ -154,6 +158,9 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 		return
 	}
 
+	// Set up a formatState for wrapping the block.
+	//blockFs := &formatState{make([]*Format, 0, 2)}
+
 	// Merge all formats into a single tag.
 	for i := range newFms {
 		fm := newFms[i].Fmt()
@@ -163,27 +170,30 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 			case Tag:
 				// If an opening tag is not specified by the Op insert type, it may be specified by an attribute.
 				if fm.Block && val != "" {
-					blockWrap.tagName = val // Override whatever value may be set.
+					block.tagName = val // Override whatever value may be set.
 				}
 			case Class:
-				blockWrap.classes = append(blockWrap.classes, val)
+				block.classes = append(block.classes, val)
 			case Style:
-				blockWrap.style += val
+				block.style += val
 			}
 		}
 		// Simply write out all of FormatWrapper opening text (if there is any).
 		if fw, ok := newFms[i].(FormatWrapper); ok {
-			finalBuf.WriteString(fw.PreWrap(fs.open))
+			fm.Val = fw.PreWrap(fs.open)
+			fm.fm = newFms[i]
+			fs.open = append(fs.open, fm)
+			finalBuf.WriteString(fm.Val)
 		}
 	}
 
-	if blockWrap.tagName != "" {
+	if block.tagName != "" {
 		finalBuf.WriteByte('<')
-		finalBuf.WriteString(blockWrap.tagName)
-		finalBuf.WriteString(classesList(blockWrap.classes))
-		if blockWrap.style != "" {
+		finalBuf.WriteString(block.tagName)
+		finalBuf.WriteString(classesList(block.classes))
+		if block.style != "" {
 			finalBuf.WriteString(" style=")
-			finalBuf.WriteString(strconv.Quote(blockWrap.style))
+			finalBuf.WriteString(strconv.Quote(block.style))
 		}
 		finalBuf.WriteByte('>')
 	}
@@ -192,16 +202,17 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 
 	finalBuf.WriteString(o.Data) // Copy the data of the current Op (usually just "<br>" or blank).
 
-	if blockWrap.tagName != "" {
-		closeTag(finalBuf, blockWrap.tagName)
+	if block.tagName != "" {
+		closeTag(finalBuf, block.tagName)
 	}
 
 	// Write out the closes by FormatWrapper formats, starting from the last written.
-	for i := len(newFms) - 1; i >= 0; i-- {
-		if fw, ok := newFms[i].(FormatWrapper); ok {
-			finalBuf.WriteString(fw.PostWrap(fs.open, o))
-		}
-	}
+	fs.closePrevious(finalBuf, o)
+	//for i := len(blockFs) - 1; i >= 0; i-- {
+	//	if fw, ok := newFms[i].(FormatWrapper); ok {
+	//		finalBuf.WriteString(fw.PostWrap(fs.open, o))
+	//	}
+	//}
 
 	tempBuf.Reset()
 
@@ -219,13 +230,12 @@ func (o *Op) writeInline(fs *formatState, buf *bytes.Buffer, newFms []Formatter)
 		// Filter out Block-level formats.
 		if !f.Block {
 			f.fm = newFms[i]
-			fs.add(f)
 			addNow.open = append(addNow.open, f)
 		}
 	}
 
 	addNow.writeFormats(buf)
-	copy(fs.open, addNow.open) // Copy after the sorting.
+	fs.open = append(fs.open, addNow.open...) // Copy after the sorting.
 
 	buf.WriteString(o.Data)
 
@@ -291,6 +301,10 @@ func (o *Op) getFormatter(keyword string, customFormats func(string, *Op) Format
 
 	return nil
 
+}
+
+func blankOp() *Op {
+	return &Op{"", "text", make(map[string]string)}
 }
 
 // Each handler should check the previous Op to see if it has attributes that are not set on the current Op and close the

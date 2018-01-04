@@ -49,16 +49,16 @@ func TestSimple(t *testing.T) {
 
 }
 
-func TestOps1(t *testing.T) {
-	if err := testPair("ops1.json", "ops1.html"); err != nil {
-		t.Errorf("%s", err)
-	}
-}
+func TestRender(t *testing.T) {
 
-func TestNested(t *testing.T) {
-	if err := testPair("nested.json", "nested.html"); err != nil {
-		t.Errorf("%s", err)
+	pairNames := []string{"ops1", "nested", "list1", "list2"}
+
+	for _, n := range pairNames {
+		if err := testPair(n+".json", n+".html"); err != nil {
+			t.Errorf("(name: %s) %s", n, err)
+		}
 	}
+
 }
 
 func testPair(opsFile, htmlFile string) error {

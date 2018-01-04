@@ -68,7 +68,7 @@ func TestFormatState_add(t *testing.T) {
 		fs.add(fm)
 
 		if len(ca.want) != len(fs.open) {
-			t.Errorf("unequal count of formats (index %d); got %s", i, fs.open)
+			t.Errorf("(index %d) unequal count of formats", i)
 			t.FailNow()
 		}
 

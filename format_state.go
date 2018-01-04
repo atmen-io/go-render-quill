@@ -32,11 +32,6 @@ func (fs *formatState) closePrevious(buf *bytes.Buffer, o *Op) {
 		// If this format is not set on the current Op, close it.
 		if !fs.open[i].fm.HasFormat(o) {
 
-			if _, ok := fs.open[i].fm.(FormatWrapper); ok {
-				fs.pop(buf, o)
-				continue
-			}
-
 			// If we need to close a tag after which there are tags that should stay open, close the following tags for now.
 			if i < len(fs.open)-1 {
 				for ij := len(fs.open) - 1; ij > i; ij-- {
@@ -53,7 +48,7 @@ func (fs *formatState) closePrevious(buf *bytes.Buffer, o *Op) {
 
 	// Re-open the temporarily closed formats.
 	closedTemp.writeFormats(buf)
-	copy(fs.open, closedTemp.open) // Copy after the sorting.
+	fs.open = append(fs.open, closedTemp.open...) // Copy after the sorting.
 
 }
 
@@ -100,7 +95,11 @@ func (fs *formatState) writeFormats(buf *bytes.Buffer) {
 func (fs *formatState) pop(buf *bytes.Buffer, o *Op) {
 	indx := len(fs.open) - 1
 	if fw, ok := fs.open[indx].fm.(FormatWrapper); ok {
-		buf.WriteString(fw.PostWrap(fs.open, o))
+		v := fw.PostWrap(fs.open, o)
+		if v == "" {
+			return
+		}
+		buf.WriteString(v)
 	} else if fs.open[indx].Place == Tag {
 		closeTag(buf, fs.open[indx].Val)
 	} else {

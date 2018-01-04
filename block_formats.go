@@ -69,7 +69,7 @@ func (lf *listFormat) HasFormat(o *Op) bool {
 func (lf *listFormat) PreWrap(openTags []*Format) string {
 	var count uint8
 	for i := range openTags {
-		if openTags[i].Place == Tag && openTags[i].Val == lf.lType {
+		if openTags[i].Place == Tag && openTags[i].Val == "<"+lf.lType+">" {
 			count++
 		}
 	}
@@ -81,13 +81,16 @@ func (lf *listFormat) PreWrap(openTags []*Format) string {
 
 // listFormat implements the FormatWrapper interface.
 func (lf *listFormat) PostWrap(openTags []*Format, o *Op) string {
+	if !o.HasAttr("list") {
+		return "</" + lf.lType + ">"
+	}
 	var count uint8
 	for i := range openTags {
 		if openTags[i].Place == Tag && openTags[i].Val == lf.lType {
 			count++
 		}
 	} // TODO
-	return "</" + lf.lType + ">"
+	return ""
 }
 
 // indentDepths gives either the indent amount of a list or 0 if there is no indenting.
