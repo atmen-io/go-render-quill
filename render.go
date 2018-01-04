@@ -51,43 +51,12 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) (html
 		fmTer := o.getFormatter(o.Type, customFormats)
 		if fmTer == nil {
 			return finalBuf.Bytes(), fmt.Errorf("an op does not have a format defined for its type: %v", raw[i])
-		} else {
-			fm := fmTer.Fmt()
-			fm.fm = fmTer
-			if fw, ok := fmTer.(FormatWrapper); ok {
-				fm.wrapPre, fm.wrapPost = fw.Wrap()
-				fm.wrap = true
-				fms = append(fms, fm)
-			} else if !fs.hasSet(fmTer.Fmt()) {
-				fms = append(fms, fm)
-			}
 		}
+		o.addFmTer(fmTer, fs, fms, tempBuf)
 
 		// Get a Formatter out of each of the attributes.
 		for attr := range o.Attrs {
-			fmTer = o.getFormatter(attr, customFormats)
-			if fmTer == nil {
-				continue
-			}
-			fm := fmTer.Fmt()
-			fm.fm = fmTer
-			if fw, ok := fmTer.(FormatWrapper); ok {
-				fm.wrapPre, fm.wrapPost = fw.Wrap()
-				fm.wrap = true
-				fms = append(fms, fm)
-			} else if !fs.hasSet(fmTer.Fmt()) {
-				fms = append(fms, fm)
-			}
-		}
-
-		// Check if any of the formats is a FormatWriter. If any is, just write it out.
-		for i := range fms {
-			if wr, ok := fms[i].fm.(FormatWriter); ok {
-				wr.Write(tempBuf)
-				o.Data = ""
-			}
-			// Delete this Formatter from fms (it does not do anything else).
-			fms = append(fms[0:i], fms[i+1:]...)
+			o.addFmTer(o.getFormatter(attr, customFormats), fs, fms, tempBuf)
 		}
 
 		// Open the a block element, write its body, and close it to move on only when the ending "\n" of the block is reached.
@@ -143,6 +112,28 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) (html
 	html = finalBuf.Bytes()
 	return
 
+}
+
+func (o *Op) addFmTer(fmTer Formatter, fs *formatState, fms []*Format, buf *bytes.Buffer) {
+	if fmTer == nil {
+		return
+	}
+	fm := fmTer.Fmt()
+	if fm == nil {
+		// Check if the format is a FormatWriter. If it is, just write it out and continue.
+		if wr, ok := fmTer.(FormatWriter); ok {
+			wr.Write(buf)
+		}
+		return
+	}
+	fm.fm = fmTer
+	if fw, ok := fmTer.(FormatWrapper); ok {
+		fm.wrapPre, fm.wrapPost = fw.Wrap()
+		fm.wrap = true
+		fms = append(fms, fm)
+	} else if !fs.hasSet(fmTer.Fmt()) {
+		fms = append(fms, fm)
+	}
 }
 
 // An Op is a Delta insert operations (https://github.com/quilljs/delta#insert) that has been converted into this format for
@@ -232,12 +223,9 @@ func (o *Op) writeInline(fs *formatState, buf *bytes.Buffer, newFms []*Format) {
 	for _, f := range newFms {
 		// Filter out Block-level formats.
 		if !f.Block {
-			f.fm = newFms[i]
-			if wr, ok := f.fm.(FormatWrapper); ok {
-				var write bool
-				f.Val, write = wr.PreWrap(fs.open)
-				if write {
-					f.wrap = true
+			if f.wrap {
+				// Add FormatWrapper formats only if they need to be written now.
+				if f.fm.(FormatWrapper).Open(fs.open, o) {
 					addNow.add(f)
 				}
 			} else {
@@ -336,10 +324,7 @@ type FormatWriter interface {
 	Write(io.Writer) // Write the entire body of the element.
 }
 
-// A FormatWrapper wraps text with additional text of any kind (such as "<ul>" for lists). For block formats, PreWrap and PostWrap
-// are given a list of all open formats (except for the block's opening tag), and whatever string is written is saved in such a
-// list to be checked up on by PostWrap. For inline formats, the string PreWrap or PostWrap returns is simply written without being
-// saved in the list of open formats.
+// A FormatWrapper wraps text with additional text of any kind (such as "<ul>" for lists).
 type FormatWrapper interface {
 	Formatter
 	Wrap() (pre, post string)  // Say what opening and closing wraps will be written.

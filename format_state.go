@@ -47,9 +47,8 @@ func (fs *formatState) closePrevious(buf *bytes.Buffer, o *Op) {
 				for ij := len(fs.open) - 1; ij > i; ij-- {
 					closedTemp.add(fs.open[ij])
 					if f.wrap {
-						if fw, ok := f.fm.(FormatWrapper); ok {
-							v, _ := fw.PostWrap(fs.open, o)
-							buf.WriteString(v)
+						if f.fm.(FormatWrapper).Close(fs.open, o) {
+							buf.WriteString(f.wrapPost)
 						}
 					} else if f.Place == Tag {
 						closeTag(buf, f.Val)
@@ -95,7 +94,7 @@ func (fs *formatState) writeFormats(buf *bytes.Buffer) {
 	for i := range fs.open {
 
 		if fs.open[i].wrap {
-			buf.WriteString(fs.open[i].Val) // The complete opening or closing wrap is given.
+			buf.WriteString(fs.open[i].wrapPre) // The complete opening or closing wrap is given.
 			continue
 		}
 
