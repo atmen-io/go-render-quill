@@ -31,38 +31,18 @@ func (fs *formatState) closePrevious(buf *bytes.Buffer, o *Op) {
 
 		f := fs.open[i]
 
-		if f.wrap {
-			if f.fm.(FormatWrapper).Close(fs.open, o) {
-				buf.WriteString(f.wrapPost)
-				fs.pop()
-			}
-			continue
-		}
-
 		// If this format is not set on the current Op, close it.
-		if !f.fm.HasFormat(o) {
+		if (!f.wrap && !f.fm.HasFormat(o)) || (f.wrap && f.fm.(FormatWrapper).Close(fs.open, o)) {
 
 			// If we need to close a tag after which there are tags that should stay open, close the following tags for now.
 			if i < len(fs.open)-1 {
 				for ij := len(fs.open) - 1; ij > i; ij-- {
 					closedTemp.add(fs.open[ij])
-					if f.wrap {
-						buf.WriteString(f.wrapPost)
-					} else if f.Place == Tag {
-						closeTag(buf, f.Val)
-					} else {
-						closeTag(buf, "span")
-					}
-					fs.pop()
+					fs.pop(buf)
 				}
 			}
 
-			if f.Place == Tag {
-				closeTag(buf, f.Val)
-			} else {
-				closeTag(buf, "span")
-			}
-			fs.pop()
+			fs.pop(buf)
 
 		}
 
@@ -72,6 +52,19 @@ func (fs *formatState) closePrevious(buf *bytes.Buffer, o *Op) {
 	closedTemp.writeFormats(buf)
 	fs.open = append(fs.open, closedTemp.open...) // Copy after the sorting.
 
+}
+
+// pop removes the last format state from the list of open states.
+func (fs *formatState) pop(buf *bytes.Buffer) {
+	indx := len(fs.open) - 1
+	if fs.open[indx].wrap {
+		buf.WriteString(fs.open[indx].wrapPost)
+	} else if fs.open[indx].Place == Tag {
+		closeTag(buf, fs.open[indx].Val)
+	} else {
+		closeTag(buf, "span")
+	}
+	fs.open = fs.open[:indx]
 }
 
 // add adds a format that the string that will be written to buf right after this will have.
@@ -113,11 +106,6 @@ func (fs *formatState) writeFormats(buf *bytes.Buffer) {
 
 	}
 
-}
-
-// pop removes the last format state from the list of open states.
-func (fs *formatState) pop() {
-	fs.open = fs.open[:len(fs.open)-1]
 }
 
 // Implement the sort.Interface interface.
