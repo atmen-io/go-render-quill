@@ -68,10 +68,10 @@ type linkFormat struct {
 	href string
 }
 
-func (*linkFormat) Fmt() *Format { return new(Format) }
+func (*linkFormat) Fmt() *Format { return new(Format) } // Only a wrapper.
 
-func (lf *linkFormat) HasFormat(o *Op) bool {
-	return o.Attrs["link"] == lf.href
+func (lf *linkFormat) HasFormat(*Op) bool {
+	return false
 }
 
 func (lf *linkFormat) Wrap() (string, string) {
@@ -83,7 +83,7 @@ func (lf *linkFormat) Open(_ []*Format, _ *Op) bool {
 }
 
 func (lf *linkFormat) Close(_ []*Format, o *Op) bool {
-	return !lf.HasFormat(o)
+	return o.Attrs["link"] != lf.href
 }
 
 // image

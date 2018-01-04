@@ -48,15 +48,15 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) (html
 		fms = fms[:0] // Reset the slice for the current Op iteration.
 
 		// To set up fms, first check the Op insert type.
-		fmTer := o.getFormatter(o.Type, customFormats)
-		if fmTer == nil {
+		typeFmTer := o.getFormatter(o.Type, customFormats)
+		if typeFmTer == nil {
 			return finalBuf.Bytes(), fmt.Errorf("an op does not have a format defined for its type: %v", raw[i])
 		}
-		o.addFmTer(fmTer, fs, fms, tempBuf)
+		fms = o.addFmTer(fms, typeFmTer, fs, tempBuf)
 
 		// Get a Formatter out of each of the attributes.
 		for attr := range o.Attrs {
-			o.addFmTer(o.getFormatter(attr, customFormats), fs, fms, tempBuf)
+			fms = o.addFmTer(fms, o.getFormatter(attr, customFormats), fs, tempBuf)
 		}
 
 		// Open the a block element, write its body, and close it to move on only when the ending "\n" of the block is reached.
@@ -114,26 +114,30 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) (html
 
 }
 
-func (o *Op) addFmTer(fmTer Formatter, fs *formatState, fms []*Format, buf *bytes.Buffer) {
+// addFmTer adds the format from fmTer to fms if the format is not already set on fs. All FormatWrapper formats are added regardless
+// of whether they are already set on fs.
+func (o *Op) addFmTer(fms []*Format, fmTer Formatter, fs *formatState, buf *bytes.Buffer) []*Format {
 	if fmTer == nil {
-		return
+		return fms
 	}
 	fm := fmTer.Fmt()
 	if fm == nil {
 		// Check if the format is a FormatWriter. If it is, just write it out and continue.
 		if wr, ok := fmTer.(FormatWriter); ok {
 			wr.Write(buf)
+			o.Data = ""
 		}
-		return
+		return fms
 	}
 	fm.fm = fmTer
 	if fw, ok := fmTer.(FormatWrapper); ok {
-		fm.wrapPre, fm.wrapPost = fw.Wrap()
 		fm.wrap = true
-		fms = append(fms, fm)
+		fm.wrapPre, fm.wrapPost = fw.Wrap()
+		return append(fms, fm)
 	} else if !fs.hasSet(fmTer.Fmt()) {
-		fms = append(fms, fm)
+		return append(fms, fm)
 	}
+	return fms
 }
 
 // An Op is a Delta insert operations (https://github.com/quilljs/delta#insert) that has been converted into this format for
@@ -183,7 +187,7 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 		// Write out all of FormatWrapper opening text (if there is any).
 		if fm.wrap && fm.fm.(FormatWrapper).Open(fs.open, o) {
 			fs.add(fm)
-			finalBuf.WriteString(fm.Val)
+			finalBuf.WriteString(fm.wrapPre)
 		}
 	}
 

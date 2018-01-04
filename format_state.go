@@ -47,9 +47,7 @@ func (fs *formatState) closePrevious(buf *bytes.Buffer, o *Op) {
 				for ij := len(fs.open) - 1; ij > i; ij-- {
 					closedTemp.add(fs.open[ij])
 					if f.wrap {
-						if f.fm.(FormatWrapper).Close(fs.open, o) {
-							buf.WriteString(f.wrapPost)
-						}
+						buf.WriteString(f.wrapPost)
 					} else if f.Place == Tag {
 						closeTag(buf, f.Val)
 					} else {
