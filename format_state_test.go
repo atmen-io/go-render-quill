@@ -98,8 +98,8 @@ func TestFormatState_closePrevious(t *testing.T) {
 
 	cases := []formatState{
 		{[]*Format{
-			{"em", Tag, false, o.getFormatter("italic", nil)},
-			{"strong", Tag, false, o.getFormatter("bold", nil)},
+			{"em", Tag, false, false, "", "", o.getFormatter("italic", nil)},
+			{"strong", Tag, false, false, "", "", o.getFormatter("bold", nil)},
 		}},
 	}
 
@@ -129,65 +129,88 @@ func TestFormatState_Sort(t *testing.T) {
 		// no attributes set
 	}
 
-	cases := []*formatState{
-		{[]*Format{
-			{"strong", Tag, false, o.getFormatter("bold", nil)},
-			{"em", Tag, false, o.getFormatter("italic", nil)},
-		}},
-		{[]*Format{
-			{"u", Tag, false, o.getFormatter("underline", nil)},
-			{"align-center", Class, false, o.getFormatter("align", nil)},
-			{"strong", Tag, false, o.getFormatter("bold", nil)},
-		}},
-		{[]*Format{
-			{"color:#e0e0e0;", Style, false, o.getFormatter("color", nil)},
-			{"em", Tag, false, o.getFormatter("italic", nil)},
-		}},
-		{[]*Format{
-			{"em", Tag, false, o.getFormatter("italic", nil)},
-			{`<a href="https://widerwebs.com" target="_blank">`, Tag, false, o.getFormatter("link", nil)}, // link wrapper
-		}},
+	cases := [][]struct {
+		Val     string
+		Place   FormatPlace
+		keyword string
+	}{
+		{
+			{"strong", Tag, "bold"},
+			{"em", Tag, "italic"},
+		},
+		{
+			{"u", Tag, "underline"},
+			{"align-center", Class, "align"},
+			{"strong", Tag, "bold"},
+		},
+		{
+			{"color:#e0e0e0;", Style, "color"},
+			{"em", Tag, "italic"},
+		},
+		{
+			{"em", Tag, "italic"},
+			{`<a href="https://widerwebs.com" target="_blank">`, Tag, "link"}, // link wrapper
+		},
 	}
 
-	want := []*formatState{
-		{[]*Format{
-			{"em", Tag, false, o.getFormatter("italic", nil)},
-			{"strong", Tag, false, o.getFormatter("bold", nil)},
-		}},
-		{[]*Format{
-			{"strong", Tag, false, o.getFormatter("bold", nil)},
-			{"u", Tag, false, o.getFormatter("underline", nil)},
-			{"align-center", Class, false, o.getFormatter("align", nil)},
-		}},
-		{[]*Format{
-			{"em", Tag, false, o.getFormatter("italic", nil)},
-			{"color:#e0e0e0;", Style, false, o.getFormatter("color", nil)},
-		}},
-		{[]*Format{
-			{`<a href="https://widerwebs.com" target="_blank">`, Tag, false, o.getFormatter("link", nil)}, // link wrapper
-			{"em", Tag, false, o.getFormatter("italic", nil)},
-		}},
+	want := [][]struct {
+		Val     string
+		Place   FormatPlace
+		keyword string
+	}{
+		{
+			{"em", Tag, "italic"},
+			{"strong", Tag, "bold"},
+		},
+		{
+			{"strong", Tag, "bold"},
+			{"u", Tag, "underline"},
+			{"align-center", Class, "align"},
+		},
+		{
+			{"em", Tag, "italic"},
+			{"color:#e0e0e0;", Style, "color"},
+		},
+		{
+			{`<a href="https://widerwebs.com" target="_blank">`, Tag, "link"}, // link wrapper
+			{"em", Tag, "italic"},
+		},
 	}
 
 	for i := range cases {
 
-		sort.Sort(cases[i])
+		fsCase := new(formatState)
+		for _, s := range cases[i] {
+			fsCase.open = append(fsCase.open, &Format{
+				Val:   s.Val,
+				Place: s.Place,
+				fm:    o.getFormatter(s.keyword, nil),
+			})
+		}
 
-		caseI := cases[i].open
-		wantI := want[i].open
+		sort.Sort(fsCase)
+
+		fsWant := new(formatState)
+		for _, s := range want[i] {
+			fsWant.open = append(fsWant.open, &Format{
+				Val:   s.Val,
+				Place: s.Place,
+				fm:    o.getFormatter(s.keyword, nil),
+			})
+		}
 
 		ok := true
-		for j := range caseI {
-			if caseI[j].Val != wantI[j].Val {
+		for j := range fsCase.open {
+			if fsCase.open[j].Val != fsWant.open[j].Val {
 				ok = false
-			} else if caseI[j].Place != wantI[j].Place {
+			} else if fsCase.open[j].Place != fsWant.open[j].Place {
 				ok = false
 			}
 		}
 		if !ok {
 			t.Errorf("bad sorting (index %d); got:\n", i)
-			for k := range caseI {
-				t.Errorf("  (%d) %+v\n", k, *caseI[k])
+			for k := range fsCase.open {
+				t.Errorf("  (%d) %+v\n", k, *fsCase.open[k])
 			}
 		}
 

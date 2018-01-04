@@ -26,5 +26,8 @@
 			"list": "bullet"
 		},
 		"insert": "\n"
+	},
+	{
+		"insert": "more plain text\n"
 	}
 ]

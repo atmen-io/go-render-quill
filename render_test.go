@@ -16,9 +16,7 @@ func TestSimple(t *testing.T) {
 		`[{"insert": "bkqt"}, {"attributes": {"blockquote": true}, "insert": "\n"}]`,
 		`[{"attributes": {"color": "#a10000"}, "insert": "colored"}, {"insert": "\n"}]`,
 		`[{"insert":"abc "},{"attributes":{"bold":true},"insert":"bld"},{"attributes":{"list":"bullet"},"insert":"\n"}]`,
-		`[  {"attributes":{"bold":true,"italic":true},"insert":"bbii "},
-			{"attributes":{"italic":true},"insert":"ii"},{"insert":"\n"}]`, // ordering alphabetically
-		`[{"insert":{"image":"source-url"}},{"insert":"\n"}]`, // image (FormatWriter)
+		`[{"insert":{"image":"source-url"}},{"insert":"\n"}]`,
 		`[{"insert":"text "},{"insert":{"image":"source-url"}},{"insert":" more text\n"}]`,
 	}
 
@@ -29,7 +27,6 @@ func TestSimple(t *testing.T) {
 		"<blockquote>bkqt</blockquote>",
 		`<p><span style="color:#a10000;">colored</span></p>`,
 		"<ul><li>abc <strong>bld</strong></li></ul>",
-		"<p><em><strong>bbii </strong>ii</em></p>", // not the Quill.js style of "<p><strong><em>bbii </em></strong><em>ii</em></p>"
 		`<p><img src="source-url"></p>`,
 		`<p>text <img src="source-url"> more text</p>`,
 	}
@@ -51,7 +48,7 @@ func TestSimple(t *testing.T) {
 
 func TestRender(t *testing.T) {
 
-	pairNames := []string{"ops1", "nested", "list1", "list2"}
+	pairNames := []string{"ops1", "nested", "ordering", "list1", "list2"}
 
 	for _, n := range pairNames {
 		if err := testPair(n+".json", n+".html"); err != nil {
@@ -62,20 +59,20 @@ func TestRender(t *testing.T) {
 }
 
 func testPair(opsFile, htmlFile string) error {
-	opsArr, err := ioutil.ReadFile("./tests/" + opsFile)
+	ops, err := ioutil.ReadFile("./tests/" + opsFile)
 	if err != nil {
 		return fmt.Errorf("could not read %s; %s\n", opsFile, err)
 	}
-	desired, err := ioutil.ReadFile("./tests/" + htmlFile)
+	html, err := ioutil.ReadFile("./tests/" + htmlFile)
 	if err != nil {
 		return fmt.Errorf("could not read %s; %s\n", htmlFile, err)
 	}
-	got, err := Render(opsArr)
+	got, err := Render(ops)
 	if err != nil {
 		return fmt.Errorf("error rendering; %s\n", err)
 	}
-	if !bytes.Equal(desired, got) {
-		return fmt.Errorf("bad rendering; \nwanted: \n%s\ngot: \n%s\n", desired, got)
+	if !bytes.Equal(html, got) {
+		return fmt.Errorf("bad rendering; \nwanted: \n%s\ngot: \n%s\n", html, got)
 	}
 	return nil
 }

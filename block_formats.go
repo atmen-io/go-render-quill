@@ -1,5 +1,7 @@
 package quill
 
+import "strings"
+
 // paragraph
 type textFormat struct{}
 
@@ -66,31 +68,36 @@ func (lf *listFormat) HasFormat(o *Op) bool {
 }
 
 // listFormat implements the FormatWrapper interface.
-func (lf *listFormat) PreWrap(openTags []*Format) string {
+func (lf *listFormat) Wrap() (string, string) {
+	return "<" + lf.lType + ">", "</" + lf.lType + ">"
+}
+
+// listFormat implements the FormatWrapper interface.
+func (lf *listFormat) Open(open []*Format, o *Op) bool {
 	var count uint8
-	for i := range openTags {
-		if openTags[i].Place == Tag && openTags[i].Val == "<"+lf.lType+">" {
+	for i := range open {
+		if open[i].Place == Tag && open[i].Val == "<"+lf.lType+">" {
 			count++
 		}
 	}
 	if count <= lf.indent {
-		return "<" + lf.lType + ">"
+		return true
 	}
-	return ""
+	return false
 }
 
 // listFormat implements the FormatWrapper interface.
-func (lf *listFormat) PostWrap(openTags []*Format, o *Op) string {
-	if !o.HasAttr("list") {
-		return "</" + lf.lType + ">"
+func (lf *listFormat) Close(open []*Format, o *Op) bool {
+	if !o.HasAttr("list") && strings.IndexByte(o.Data, '\n') != -1 {
+		return true
 	}
 	var count uint8
-	for i := range openTags {
-		if openTags[i].Place == Tag && openTags[i].Val == lf.lType {
+	for i := range open {
+		if open[i].Place == Tag && open[i].Val == lf.lType {
 			count++
 		}
 	} // TODO
-	return ""
+	return false
 }
 
 // indentDepths gives either the indent amount of a list or 0 if there is no indenting.

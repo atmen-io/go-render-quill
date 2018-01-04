@@ -74,15 +74,16 @@ func (lf *linkFormat) HasFormat(o *Op) bool {
 	return o.Attrs["link"] == lf.href
 }
 
-func (lf *linkFormat) PreWrap(_ []*Format) string {
-	return `<a href=` + strconv.Quote(lf.href) + ` target="_blank">`
+func (lf *linkFormat) Wrap() (string, string) {
+	return `<a href=` + strconv.Quote(lf.href) + ` target="_blank">`, "</a>"
 }
 
-func (lf *linkFormat) PostWrap(_ []*Format, o *Op) string {
-	if lf.HasFormat(o) {
-		return ""
-	}
-	return "</a>"
+func (lf *linkFormat) Open(_ []*Format, _ *Op) bool {
+	return true // This format will only appear when there is a "link" attribute set.
+}
+
+func (lf *linkFormat) Close(_ []*Format, o *Op) bool {
+	return !lf.HasFormat(o)
 }
 
 // image

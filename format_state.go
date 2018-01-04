@@ -29,18 +29,43 @@ func (fs *formatState) closePrevious(buf *bytes.Buffer, o *Op) {
 
 	for i := len(fs.open) - 1; i >= 0; i-- { // Start with the last format opened.
 
+		f := fs.open[i]
+
+		if f.wrap {
+			if f.fm.(FormatWrapper).Close(fs.open, o) {
+				buf.WriteString(f.wrapPost)
+				fs.pop()
+			}
+			continue
+		}
+
 		// If this format is not set on the current Op, close it.
-		if !fs.open[i].fm.HasFormat(o) {
+		if !f.fm.HasFormat(o) {
 
 			// If we need to close a tag after which there are tags that should stay open, close the following tags for now.
 			if i < len(fs.open)-1 {
 				for ij := len(fs.open) - 1; ij > i; ij-- {
-					closedTemp.open = append(closedTemp.open, fs.open[ij])
-					fs.pop(buf, o)
+					closedTemp.add(fs.open[ij])
+					if f.wrap {
+						if fw, ok := f.fm.(FormatWrapper); ok {
+							v, _ := fw.PostWrap(fs.open, o)
+							buf.WriteString(v)
+						}
+					} else if f.Place == Tag {
+						closeTag(buf, f.Val)
+					} else {
+						closeTag(buf, "span")
+					}
+					fs.pop()
 				}
 			}
 
-			fs.pop(buf, o)
+			if f.Place == Tag {
+				closeTag(buf, f.Val)
+			} else {
+				closeTag(buf, "span")
+			}
+			fs.pop()
 
 		}
 
@@ -61,14 +86,16 @@ func (fs *formatState) add(f *Format) {
 	}
 }
 
+// writeFormats sorts the formats in the current formatState and writes them all out to buf. If a format implements
+// the FormatWrapper interface, that format's opening wrap is printed.
 func (fs *formatState) writeFormats(buf *bytes.Buffer) {
 
 	sort.Sort(fs) // Ensure that the serialization is consistent even if attribute ordering in a map changes.
 
 	for i := range fs.open {
 
-		if fw, ok := fs.open[i].fm.(FormatWrapper); ok {
-			buf.WriteString(fw.PreWrap(fs.open)) // The complete opening or closing wrap is given.
+		if fs.open[i].wrap {
+			buf.WriteString(fs.open[i].Val) // The complete opening or closing wrap is given.
 			continue
 		}
 
@@ -91,22 +118,9 @@ func (fs *formatState) writeFormats(buf *bytes.Buffer) {
 
 }
 
-// Pop removes the last state from the list of open states.
-func (fs *formatState) pop(buf *bytes.Buffer, o *Op) {
-	indx := len(fs.open) - 1
-	if fw, ok := fs.open[indx].fm.(FormatWrapper); ok {
-		v := fw.PostWrap(fs.open, o)
-		if v == "" {
-			return
-		}
-		buf.WriteString(v)
-	} else if fs.open[indx].Place == Tag {
-		closeTag(buf, fs.open[indx].Val)
-	} else {
-		closeTag(buf, "span")
-	}
-	// Remove the last element from the slice.
-	fs.open = fs.open[:indx]
+// pop removes the last format state from the list of open states.
+func (fs *formatState) pop() {
+	fs.open = fs.open[:len(fs.open)-1]
 }
 
 // Implement the sort.Interface interface.
