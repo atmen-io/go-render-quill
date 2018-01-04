@@ -15,6 +15,9 @@ func TestSimple(t *testing.T) {
 		`[{"insert": "line1\n\nline3\n"}]`,
 		`[{"insert": "bkqt"}, {"attributes": {"blockquote": true}, "insert": "\n"}]`,
 		`[{"attributes": {"color": "#a10000"}, "insert": "colored"}, {"insert": "\n"}]`,
+		`[{"insert":"abc "},{"attributes":{"bold":true},"insert":"bld"},{"attributes":{"list":"bullet"},"insert":"\n"}]`,
+		`[  {"attributes":{"bold":true,"italic":true},"insert":"bbii "},
+			{"attributes":{"italic":true},"insert":"ii"},{"insert":"\n"}]`, // ordering alphabetically
 	}
 
 	want := []string{
@@ -23,6 +26,8 @@ func TestSimple(t *testing.T) {
 		"<p>line1</p><p><br></p><p>line3</p>",
 		"<blockquote>bkqt</blockquote>",
 		`<p><span style="color:#a10000;">colored</span></p>`,
+		"<ul><li>abc <strong>bld</strong></li></ul>",
+		"<p><em><strong>bbii </strong>ii</em></p>", // not the Quill.js style of "<p><strong><em>bbii </em></strong><em>ii</em></p>"
 	}
 
 	for i := range cases {

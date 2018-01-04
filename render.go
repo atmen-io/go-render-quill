@@ -145,17 +145,11 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 		style   string
 	}
 
+	// At least a format from the Op.Type should be set.
 	if len(newFms) == 0 {
 		return
 	}
 
-	// The first Formatter is defined by the insert Op.Type. Check if it calls for a tag on the block.
-	fm := newFms[0].Fmt()
-	if fm.Block && fm.Place == Tag && fm.Val != "" {
-		blockWrap.tagName = fm.Val // Default block tag to format specified by the Type.
-	}
-
-	// If an opening tag has not been written, it may be specified by an attribute.
 	// Merge all formats into a single tag.
 	for i := range newFms {
 		fm := newFms[i].Fmt()
@@ -163,8 +157,9 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 			val := fm.Val
 			switch fm.Place {
 			case Tag:
+				// If an opening tag is not specified by the Op insert type, it may be specified by an attribute.
 				if fm.Block && val != "" {
-					blockWrap.tagName = val // Override value set by Type.
+					blockWrap.tagName = val // Override whatever value may be set.
 				}
 			case Class:
 				blockWrap.classes = append(blockWrap.classes, val)
@@ -172,6 +167,8 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 				blockWrap.style += val
 			}
 		}
+		// Simply write out all of FormatWrapper opening text (if there is any).
+		finalBuf.WriteString(fs.getFormatWrapperOpen(newFms[i]))
 	}
 
 	if blockWrap.tagName != "" {
@@ -193,6 +190,11 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 		closeTag(finalBuf, blockWrap.tagName)
 	}
 
+	// Write out the closes by FormatWrapper formats, starting from the last written.
+	for i := len(newFms) - 1; i >= 0; i-- {
+		finalBuf.WriteString(fs.getFormatWrapperClose(newFms[i], o))
+	}
+
 	tempBuf.Reset()
 
 }
@@ -201,13 +203,16 @@ func (o *Op) writeInline(fs *formatState, buf *bytes.Buffer, newFms []Formatter)
 
 	fs.closePrevious(buf, o)
 
-	for i := range newFms { // TODO: for consistency, maybe first sort the formats alphabetically
+	for i := range newFms {
 		fm := newFms[i].Fmt()
+		// Filter out Block-level formats.
 		if !fm.Block {
 			fm.fm = newFms[i]
-			fs.addFormat(fm, buf)
+			fs.add(fm)
 		}
 	}
+
+	fs.writeFormats(buf)
 
 	buf.WriteString(o.Data)
 
@@ -311,14 +316,6 @@ type Format struct {
 	Place FormatPlace // where this format is placed in the text
 	Block bool        // indicate whether this is a block-level format (not printed until a "\n" is reached)
 	fm    Formatter   // where this instance of a Format came from
-}
-
-func (f *Format) close(buf *bytes.Buffer) {
-	if f.Place == Tag {
-		closeTag(buf, f.Val)
-	} else {
-		closeTag(buf, "span")
-	}
 }
 
 // If cl has something, then classesList returns the class attribute to add to an HTML element with a space before the

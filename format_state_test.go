@@ -2,10 +2,11 @@ package quill
 
 import (
 	"bytes"
+	"sort"
 	"testing"
 )
 
-func TestFormatState_addFormat(t *testing.T) {
+func TestFormatState_add(t *testing.T) {
 
 	cases := []struct {
 		current []*Format
@@ -41,7 +42,7 @@ func TestFormatState_addFormat(t *testing.T) {
 				Type:  "text",
 				Attrs: map[string]string{"italic": "y"},
 			},
-			want: []*Format{ // The way addFormat works, it does not check if the format is already added.
+			want: []*Format{ // The way add works, it does not check if the format is already added.
 				{
 					Val:   "em",
 					Place: Tag,
@@ -54,8 +55,7 @@ func TestFormatState_addFormat(t *testing.T) {
 		},
 	}
 
-	fs := new(formatState)   // reuse
-	buf := new(bytes.Buffer) // reuse
+	fs := new(formatState) // reuse
 
 	for i, ca := range cases {
 
@@ -65,7 +65,7 @@ func TestFormatState_addFormat(t *testing.T) {
 		fm := fmTer.Fmt()
 		fm.fm = fmTer
 
-		fs.addFormat(fm, buf)
+		fs.add(fm)
 
 		if len(ca.want) != len(fs.open) {
 			t.Errorf("unequal count of formats (index %d); got %s", i, fs.open)
@@ -88,7 +88,7 @@ func TestFormatState_addFormat(t *testing.T) {
 
 }
 
-func TestFormatState_ClosePrevFormats(t *testing.T) {
+func TestFormatState_closePrevious(t *testing.T) {
 
 	o := &Op{
 		Data: "stuff",
@@ -99,11 +99,6 @@ func TestFormatState_ClosePrevFormats(t *testing.T) {
 	cases := []formatState{
 		{[]*Format{
 			{"em", Tag, false, o.getFormatter("italic", nil)},
-			{"strong", Tag, false, o.getFormatter("bold", nil)},
-		}},
-		{[]*Format{
-			{"<ul>", Tag, false, o.getFormatter("list", nil)}, // wrapped by FormatWrapper
-			{"li", Tag, true, o.getFormatter("list", nil)},
 			{"strong", Tag, false, o.getFormatter("bold", nil)},
 		}},
 	}
@@ -121,6 +116,80 @@ func TestFormatState_ClosePrevFormats(t *testing.T) {
 		}
 
 		buf.Reset()
+
+	}
+
+}
+
+func TestFormatState_Sort(t *testing.T) {
+
+	o := &Op{
+		Data: "stuff",
+		Type: "text",
+		// no attributes set
+	}
+
+	cases := []*formatState{
+		{[]*Format{
+			{"strong", Tag, false, o.getFormatter("bold", nil)},
+			{"em", Tag, false, o.getFormatter("italic", nil)},
+		}},
+		{[]*Format{
+			{"u", Tag, false, o.getFormatter("underline", nil)},
+			{"align-center", Class, false, o.getFormatter("align", nil)},
+			{"strong", Tag, false, o.getFormatter("bold", nil)},
+		}},
+		{[]*Format{
+			{"color:#e0e0e0;", Style, false, o.getFormatter("color", nil)},
+			{"em", Tag, false, o.getFormatter("italic", nil)},
+		}},
+		{[]*Format{
+			{"em", Tag, false, o.getFormatter("italic", nil)},
+			{`<a href="https://widerwebs.com" target="_blank">`, Tag, false, o.getFormatter("link", nil)}, // link wrapper
+		}},
+	}
+
+	want := []*formatState{
+		{[]*Format{
+			{"em", Tag, false, o.getFormatter("italic", nil)},
+			{"strong", Tag, false, o.getFormatter("bold", nil)},
+		}},
+		{[]*Format{
+			{"strong", Tag, false, o.getFormatter("bold", nil)},
+			{"u", Tag, false, o.getFormatter("underline", nil)},
+			{"align-center", Class, false, o.getFormatter("align", nil)},
+		}},
+		{[]*Format{
+			{"em", Tag, false, o.getFormatter("italic", nil)},
+			{"color:#e0e0e0;", Style, false, o.getFormatter("color", nil)},
+		}},
+		{[]*Format{
+			{`<a href="https://widerwebs.com" target="_blank">`, Tag, false, o.getFormatter("link", nil)}, // link wrapper
+			{"em", Tag, false, o.getFormatter("italic", nil)},
+		}},
+	}
+
+	for i := range cases {
+
+		sort.Sort(cases[i])
+
+		caseI := cases[i].open
+		wantI := want[i].open
+
+		ok := true
+		for j := range caseI {
+			if caseI[j].Val != wantI[j].Val {
+				ok = false
+			} else if caseI[j].Place != wantI[j].Place {
+				ok = false
+			}
+		}
+		if !ok {
+			t.Errorf("bad sorting (index %d); got:\n", i)
+			for k := range caseI {
+				t.Errorf("  (%d) %+v\n", k, *caseI[k])
+			}
+		}
 
 	}
 

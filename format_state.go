@@ -2,6 +2,7 @@ package quill
 
 import (
 	"bytes"
+	"sort"
 	"strconv"
 )
 
@@ -24,92 +25,135 @@ func (fs *formatState) hasSet(fm *Format) bool {
 // in the opposite order in which they were opened.
 func (fs *formatState) closePrevious(buf *bytes.Buffer, o *Op) {
 
+	var closedTemp []*Format
+
 	for i := len(fs.open) - 1; i >= 0; i-- { // Start with the last format opened.
 
 		// If this format is not set on the current Op, close it.
-		if !fs.open[i].fm.HasFormat(o) && !fs.open[i].Block {
+		if !fs.open[i].fm.HasFormat(o) {
 
-			if fs.doFormatWrapper("close", fs.open[i].fm, o, buf) {
+			if _, ok := fs.open[i].fm.(FormatWrapper); ok {
+				fs.pop(buf, o)
 				continue
 			}
 
 			// If we need to close a tag after which there are tags that should stay open, close the following tags for now.
 			if i < len(fs.open)-1 {
 				for ij := len(fs.open) - 1; ij > i; ij-- {
-					fs.open[ij].close(buf)
-					fs.pop()
+					closedTemp = append(closedTemp, fs.open[ij])
+					fs.pop(buf, o)
 				}
 			}
 
-			fs.open[i].close(buf)
-
-			fs.pop()
+			fs.pop(buf, o)
 
 		}
 
 	}
 
+	// Re-open the temporarily closed formats.
+	if len(closedTemp) > 0 {
+		for i := range closedTemp {
+			fs.add(closedTemp[i])
+		}
+		fs.writeFormats(buf)
+	}
+
 }
 
-// addFormat adds a format that the string that will be written to buf right after this will have.
-// Before calling addFormat, check if the Format is already opened up earlier.
-// Do not use addFormat to write block-level styles (those are written by o.writeBlock after being merged).
-func (fs *formatState) addFormat(fm *Format, buf *bytes.Buffer) {
-
-	// Check that the place where the format is supposed to be is valid.
-	if fm.Place < 0 || fm.Place > 2 {
-		return
+// add adds a format that the string that will be written to buf right after this will have.
+// Before calling add, check if the Format is already opened up earlier.
+// Do not use add to write block-level styles (those are written by o.writeBlock after being merged).
+func (fs *formatState) add(f *Format) {
+	if f.Place < 3 { // Check if the Place is valid.
+		fs.open = append(fs.open, f)
 	}
+}
 
-	if fs.doFormatWrapper("open", fm.fm, nil, buf) {
-		return
+func (fs *formatState) writeFormats(buf *bytes.Buffer) {
+
+	sort.Sort(fs) // Ensure that the rendering is consistent even if attribute ordering in a map changes.
+
+	for i := range fs.open {
+
+		if fw, ok := fs.open[i].fm.(FormatWrapper); ok {
+			if wrap := fw.PreWrap(fs.open); wrap != "" {
+				buf.WriteString(wrap) // The complete opening or closing wrap is given.
+			}
+			continue
+		}
+
+		buf.WriteByte('<')
+
+		switch fs.open[i].Place {
+		case Tag:
+			buf.WriteString(fs.open[i].Val)
+		case Class:
+			buf.WriteString("span class=")
+			buf.WriteString(strconv.Quote(fs.open[i].Val))
+		case Style:
+			buf.WriteString("span style=")
+			buf.WriteString(strconv.Quote(fs.open[i].Val))
+		}
+
+		buf.WriteByte('>')
+
 	}
-
-	fs.open = append(fs.open, fm)
-
-	buf.WriteByte('<')
-
-	switch fm.Place {
-	case Tag:
-		buf.WriteString(fm.Val)
-	case Class:
-		buf.WriteString("span class=")
-		buf.WriteString(strconv.Quote(fm.Val))
-	case Style:
-		buf.WriteString("span style=")
-		buf.WriteString(strconv.Quote(fm.Val))
-	}
-
-	buf.WriteByte('>')
-
 }
 
 // Pop removes the last state from the list of open states.
-func (fs *formatState) pop() {
-	fs.open = fs.open[:len(fs.open)-1]
+func (fs *formatState) pop(buf *bytes.Buffer, o *Op) {
+	indx := len(fs.open) - 1
+	if fw, ok := fs.open[indx].fm.(FormatWrapper); ok {
+		buf.WriteString(fw.PostWrap(fs.open, o))
+	} else if fs.open[indx].Place == Tag {
+		closeTag(buf, fs.open[indx].Val)
+	} else {
+		closeTag(buf, "span")
+	}
+	// Remove the last element from the slice.
+	fs.open = fs.open[:indx]
 }
 
-func (fs *formatState) doFormatWrapper(openClose string, fmTer Formatter, o *Op, buf *bytes.Buffer) (wrote bool) {
-	if openClose == "open" {
-		if fw, ok := fmTer.(FormatWrapper); ok {
-			if wrapOpen := fw.PreWrap(fs.open); wrapOpen != "" {
-				fs.open = append(fs.open, &Format{
-					Val:   wrapOpen,
-					Place: Tag,
-					fm:    fmTer,
-				})
-				buf.WriteString(wrapOpen)
-				wrote = true
-			}
-		}
-	} else if openClose == "close" {
-		if fw, ok := fmTer.(FormatWrapper); ok {
-			if wrapClose := fw.PostWrap(fs.open, o); wrapClose != "" {
-				fs.pop()                   // TODO ???
-				buf.WriteString(wrapClose) // The complete closing wrap is given in wrapClose.
-				wrote = true
-			}
-		}
+func (fs *formatState) getFormatWrapperOpen(f Formatter) string {
+	if fw, ok := f.(FormatWrapper); ok {
+		return fw.PreWrap(fs.open)
 	}
-	return
+	return ""
+}
+
+func (fs *formatState) getFormatWrapperClose(f Formatter, o *Op) string {
+	if fw, ok := f.(FormatWrapper); ok {
+		return fw.PostWrap(fs.open, o)
+	}
+	return ""
+}
+
+// Implement the sort.Interface interface.
+
+func (fs *formatState) Len() int {
+	return len(fs.open)
+}
+
+func (fs *formatState) Less(i, j int) bool {
+
+	// Formats that implement the FormatWrapper interface are written first.
+	if _, ok := fs.open[i].fm.(FormatWrapper); ok {
+		return true
+	} else if _, ok := fs.open[j].fm.(FormatWrapper); ok {
+		return false
+	}
+
+	// Tags are written first, then classes, and then style attributes.
+	if fs.open[i].Place != fs.open[j].Place {
+		return fs.open[i].Place < fs.open[j].Place
+	}
+
+	// Simply check values.
+	return fs.open[i].Val < fs.open[j].Val
+
+}
+
+func (fs *formatState) Swap(i, j int) {
+	fs.open[i], fs.open[j] = fs.open[j], fs.open[i]
 }

@@ -73,17 +73,20 @@ func (lf *listFormat) PreWrap(openTags []*Format) string {
 			count++
 		}
 	}
-	if count <= lf.indent {
+	if count <= lf.indent { // TODO
 		return "<" + lf.lType + ">"
 	}
 	return ""
 }
 
 // listFormat implements the FormatWrapper interface.
-func (lf *listFormat) PostWrap(openedTags []string, o *Op) string {
-	if o.Attrs["list"] == lf.lType { // TODO: too simplistic; check for nested lists
-		return ""
-	}
+func (lf *listFormat) PostWrap(openTags []*Format, o *Op) string {
+	var count uint8
+	for i := range openTags {
+		if openTags[i].Place == Tag && openTags[i].Val == lf.lType {
+			count++
+		}
+	} // TODO
 	return "</" + lf.lType + ">"
 }
 
