@@ -172,7 +172,9 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 			}
 		}
 		// Simply write out all of FormatWrapper opening text (if there is any).
-		finalBuf.WriteString(fs.getFormatWrapperOpen(newFms[i]))
+		if fw, ok := newFms[i].(FormatWrapper); ok {
+			finalBuf.WriteString(fw.PreWrap(fs.open))
+		}
 	}
 
 	if blockWrap.tagName != "" {
@@ -196,7 +198,9 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 
 	// Write out the closes by FormatWrapper formats, starting from the last written.
 	for i := len(newFms) - 1; i >= 0; i-- {
-		finalBuf.WriteString(fs.getFormatWrapperClose(newFms[i], o))
+		if fw, ok := newFms[i].(FormatWrapper); ok {
+			finalBuf.WriteString(fw.PostWrap(fs.open, o))
+		}
 	}
 
 	tempBuf.Reset()
@@ -207,16 +211,21 @@ func (o *Op) writeInline(fs *formatState, buf *bytes.Buffer, newFms []Formatter)
 
 	fs.closePrevious(buf, o)
 
+	// Save the formats being written now separately from fs.
+	addNow := &formatState{make([]*Format, 0, len(newFms))}
+
 	for i := range newFms {
-		fm := newFms[i].Fmt()
+		f := newFms[i].Fmt()
 		// Filter out Block-level formats.
-		if !fm.Block {
-			fm.fm = newFms[i]
-			fs.add(fm)
+		if !f.Block {
+			f.fm = newFms[i]
+			fs.add(f)
+			addNow.open = append(addNow.open, f)
 		}
 	}
 
-	fs.writeFormats(buf)
+	addNow.writeFormats(buf)
+	copy(fs.open, addNow.open) // Copy after the sorting.
 
 	buf.WriteString(o.Data)
 

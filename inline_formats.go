@@ -68,7 +68,7 @@ type linkFormat struct {
 	href string
 }
 
-func (*linkFormat) Fmt() *Format { return nil } // a wrapper only
+func (*linkFormat) Fmt() *Format { return new(Format) }
 
 func (lf *linkFormat) HasFormat(o *Op) bool {
 	return o.Attrs["link"] == lf.href

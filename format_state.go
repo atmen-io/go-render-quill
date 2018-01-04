@@ -25,7 +25,7 @@ func (fs *formatState) hasSet(fm *Format) bool {
 // in the opposite order in which they were opened.
 func (fs *formatState) closePrevious(buf *bytes.Buffer, o *Op) {
 
-	var closedTemp []*Format
+	closedTemp := &formatState{}
 
 	for i := len(fs.open) - 1; i >= 0; i-- { // Start with the last format opened.
 
@@ -40,7 +40,7 @@ func (fs *formatState) closePrevious(buf *bytes.Buffer, o *Op) {
 			// If we need to close a tag after which there are tags that should stay open, close the following tags for now.
 			if i < len(fs.open)-1 {
 				for ij := len(fs.open) - 1; ij > i; ij-- {
-					closedTemp = append(closedTemp, fs.open[ij])
+					closedTemp.open = append(closedTemp.open, fs.open[ij])
 					fs.pop(buf, o)
 				}
 			}
@@ -52,12 +52,8 @@ func (fs *formatState) closePrevious(buf *bytes.Buffer, o *Op) {
 	}
 
 	// Re-open the temporarily closed formats.
-	if len(closedTemp) > 0 {
-		for i := range closedTemp {
-			fs.add(closedTemp[i])
-		}
-		fs.writeFormats(buf)
-	}
+	closedTemp.writeFormats(buf)
+	copy(fs.open, closedTemp.open) // Copy after the sorting.
 
 }
 
@@ -72,14 +68,12 @@ func (fs *formatState) add(f *Format) {
 
 func (fs *formatState) writeFormats(buf *bytes.Buffer) {
 
-	sort.Sort(fs) // Ensure that the rendering is consistent even if attribute ordering in a map changes.
+	sort.Sort(fs) // Ensure that the serialization is consistent even if attribute ordering in a map changes.
 
 	for i := range fs.open {
 
 		if fw, ok := fs.open[i].fm.(FormatWrapper); ok {
-			if wrap := fw.PreWrap(fs.open); wrap != "" {
-				buf.WriteString(wrap) // The complete opening or closing wrap is given.
-			}
+			buf.WriteString(fw.PreWrap(fs.open)) // The complete opening or closing wrap is given.
 			continue
 		}
 
@@ -99,6 +93,7 @@ func (fs *formatState) writeFormats(buf *bytes.Buffer) {
 		buf.WriteByte('>')
 
 	}
+
 }
 
 // Pop removes the last state from the list of open states.
@@ -113,20 +108,6 @@ func (fs *formatState) pop(buf *bytes.Buffer, o *Op) {
 	}
 	// Remove the last element from the slice.
 	fs.open = fs.open[:indx]
-}
-
-func (fs *formatState) getFormatWrapperOpen(f Formatter) string {
-	if fw, ok := f.(FormatWrapper); ok {
-		return fw.PreWrap(fs.open)
-	}
-	return ""
-}
-
-func (fs *formatState) getFormatWrapperClose(f Formatter, o *Op) string {
-	if fw, ok := f.(FormatWrapper); ok {
-		return fw.PostWrap(fs.open, o)
-	}
-	return ""
 }
 
 // Implement the sort.Interface interface.
