@@ -83,15 +83,22 @@ func (lf *listFormat) Open(open []*Format, o *Op) bool {
 
 // listFormat implements the FormatWrapper interface.
 func (lf *listFormat) Close(open []*Format, o *Op, doingBlock bool) bool {
-	if !doingBlock {
+
+	if !doingBlock { // The closing wrap is written only when we know what kind of block this will be.
 		return false
 	}
-	if doingBlock && !o.HasAttr("list") {
+
+	if !o.HasAttr("list") { // If the block is not a list item at all, close the list block.
 		return true
 	}
-	t := o.Attrs["list"]
-	ind := indentDepths[o.Attrs["indent"]]
-	return doingBlock && ind > lf.indent && ((t == "ordered" && lf.lType != "ol") || (t == "bullet" && lf.lType != "ul"))
+
+	t := o.Attrs["list"] // The type of the current list item (ordered or bullet).
+	ind := indentDepths[o.Attrs["indent"]] // The indent of the current list item.
+
+	// Close the list block only if both (a) the current list item is staying at the same indent level or is at a
+	// lower indent level and (b) the type of the list is different from the type of the previous.
+	return ind <= lf.indent && ((t == "ordered" && lf.lType != "ol") || (t == "bullet" && lf.lType != "ul"))
+
 }
 
 // indentDepths gives either the indent amount of a list or 0 if there is no indenting.
