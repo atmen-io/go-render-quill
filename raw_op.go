@@ -14,7 +14,7 @@ type rawOp struct {
 func (ro *rawOp) makeOp(o *Op) error {
 
 	if ro.Insert == nil {
-		return fmt.Errorf("op %+v lacks an insert", ro)
+		return fmt.Errorf("op %+v lacks an insert", *ro)
 	}
 
 	switch ins := ro.Insert.(type) {
@@ -33,7 +33,7 @@ func (ro *rawOp) makeOp(o *Op) error {
 			break
 		}
 	default:
-		return fmt.Errorf("op %+v lacks an insert", ro)
+		return fmt.Errorf("op %+v lacks an insert", *ro)
 	}
 
 	// Clear the map for reuse.

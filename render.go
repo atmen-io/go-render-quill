@@ -107,7 +107,7 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) (html
 
 	// Before writing out the final buffer, close the last remaining tags set by a FormatWrapper.
 	// The FormatWrapper should see that all styling is now done.
-	fs.closePrevious(finalBuf, blankOp(), true)
+	//fs.closePrevious(finalBuf, blankOp(), true)
 
 	html = finalBuf.Bytes()
 	return
@@ -153,8 +153,19 @@ type Op struct {
 // block is reached (the Op with the "\n" character holds the information about the block element).
 func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.Buffer, newFms []*Format) {
 
-	// Close the inline formats opened within the block.
-	fs.closePrevious(tempBuf, o, true)
+	// Close the inline formats opened within the block to the tempBuf and block formats of wrappers to finalBuf.
+	wrapFs := &formatState{make([]*Format, 0, 2)}
+	inlineFs := &formatState{make([]*Format, 0, 2)}
+	for i := range fs.open {
+		if fs.open[i].wrap {
+			wrapFs.add(fs.open[i])
+		} else {
+			inlineFs.add(fs.open[i])
+		}
+	}
+	wrapFs.closePrevious(finalBuf, o, true)
+	inlineFs.closePrevious(tempBuf, o, true)
+	fs.open = make([]*Format, 0, 2)
 
 	var block struct {
 		tagName string
@@ -170,18 +181,19 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 	// Merge all formats into a single tag.
 	for i := range newFms {
 		fm := newFms[i]
+		// Apply only block-level formats.
 		if fm.Block {
-			val := fm.Val
+			v := fm.Val
 			switch fm.Place {
 			case Tag:
 				// If an opening tag is not specified by the Op insert type, it may be specified by an attribute.
-				if fm.Block && val != "" {
-					block.tagName = val // Override whatever value may be set.
+				if v != "" {
+					block.tagName = v // Override whatever value is set.
 				}
 			case Class:
-				block.classes = append(block.classes, val)
+				block.classes = append(block.classes, v)
 			case Style:
-				block.style += val
+				block.style += v
 			}
 		}
 		// Write out all of FormatWrapper opening text (if there is any).
@@ -212,7 +224,7 @@ func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.
 	}
 
 	// Write out the closes by FormatWrapper formats, starting from the last written.
-	fs.closePrevious(finalBuf, o, true)
+	//fs.closePrevious(finalBuf, o, true)
 
 	tempBuf.Reset()
 
@@ -226,7 +238,7 @@ func (o *Op) writeInline(fs *formatState, buf *bytes.Buffer, newFms []*Format) {
 	addNow := &formatState{make([]*Format, 0, len(newFms))}
 
 	for _, f := range newFms {
-		// Filter out Block-level formats.
+		// Apply only inline formats.
 		if !f.Block {
 			if f.wrap {
 				// Add FormatWrapper formats only if they need to be written now.
