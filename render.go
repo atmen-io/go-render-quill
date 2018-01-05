@@ -350,6 +350,10 @@ func (o *Op) getFormatter(keyword string, customFormats func(string, *Op) Format
 		return &colorFormat{
 			c: o.Attrs["color"],
 		}
+	case "indent":
+		return &indentFormat{
+			in: o.Attrs["indent"],
+		}
 	}
 
 	return nil
