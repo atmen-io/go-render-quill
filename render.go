@@ -107,7 +107,7 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) (html
 
 	// Before writing out the final buffer, close the last remaining tags set by a FormatWrapper.
 	// The FormatWrapper should see that all styling is now done.
-	//fs.closePrevious(finalBuf, blankOp(), true)
+	fs.closePrevious(finalBuf, blankOp(), true)
 
 	html = finalBuf.Bytes()
 	return
@@ -154,18 +154,53 @@ type Op struct {
 func (o *Op) writeBlock(fs *formatState, tempBuf *bytes.Buffer, finalBuf *bytes.Buffer, newFms []*Format) {
 
 	// Close the inline formats opened within the block to the tempBuf and block formats of wrappers to finalBuf.
-	wrapFs := &formatState{make([]*Format, 0, 2)}
-	inlineFs := &formatState{make([]*Format, 0, 2)}
-	for i := range fs.open {
-		if fs.open[i].wrap {
-			wrapFs.add(fs.open[i])
-		} else {
-			inlineFs.add(fs.open[i])
+	//wrapFs := &formatState{make([]*Format, 0, 2)}
+	//inlineFs := &formatState{make([]*Format, 0, 2)}
+	//for i := range fs.open {
+	//	if fs.open[i].wrap {
+	//		wrapFs.add(fs.open[i])
+	//	} else {
+	//		inlineFs.add(fs.open[i])
+	//	}
+	//}
+	//wrapFs.closePrevious(finalBuf, o, true)
+	//inlineFs.closePrevious(tempBuf, o, true)
+	//fs.open = append(wrapFs.open, inlineFs.open...) // There may be something left open.
+	//fs.closePrevious(tempBuf, o, true)
+	closedTemp := &formatState{}
+
+	for i := len(fs.open) - 1; i >= 0; i-- { // Start with the last format opened.
+
+		f := fs.open[i]
+
+		// If this format is not set on the current Op, close it.
+		if (!f.wrap && !f.fm.HasFormat(o)) || (f.wrap && f.fm.(FormatWrapper).Close(fs.open, o, true)) {
+
+			// If we need to close a tag after which there are tags that should stay open, close the following tags for now.
+			if i < len(fs.open)-1 {
+				for ij := len(fs.open) - 1; ij > i; ij-- {
+					closedTemp.add(fs.open[ij])
+					if f.wrap && f.Block {
+						fs.pop(finalBuf)
+					} else {
+						fs.pop(tempBuf)
+					}
+				}
+			}
+
+			if f.wrap && f.Block {
+				fs.pop(finalBuf)
+			} else {
+				fs.pop(tempBuf)
+			}
+
 		}
+
 	}
-	wrapFs.closePrevious(finalBuf, o, true)
-	inlineFs.closePrevious(tempBuf, o, true)
-	fs.open = make([]*Format, 0, 2)
+
+	// Re-open the temporarily closed formats.
+	closedTemp.writeFormats(tempBuf)
+	fs.open = append(fs.open, closedTemp.open...) // Copy after the sorting.
 
 	var block struct {
 		tagName string
