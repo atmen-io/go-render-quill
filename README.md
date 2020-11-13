@@ -3,12 +3,12 @@
 Package `quill` takes a Quill-based Delta (https://github.com/quilljs/delta) as a JSON array of `insert` operations
 and renders the defined HTML document.
 
-Complete documentation at GoDoc: [https://godoc.org/github.com/dchenk/go-render-quill](https://godoc.org/github.com/dchenk/go-render-quill)
+Complete documentation at GoDoc: [https://godoc.org/github.com/dazhoudotnet/go-render-quill](https://godoc.org/github.com/dazhoudotnet/go-render-quill)
 
 ## Usage
 
 ```
-import "github.com/dchenk/go-render-quill"
+import "github.com/dazhoudotnet/go-render-quill"
 
 var delta = `[{"insert":"This "},{"attributes":{"italic":true},"insert":"is"},
     {"insert":" "},{"attributes":{"bold":true},"insert":"great!"},{"insert":"\n"}]`
