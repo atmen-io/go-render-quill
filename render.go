@@ -68,7 +68,6 @@ func RenderExtended(ops []byte, customFormats func(string, *Op) Formatter) ([]by
 
 				// If the current o.Data still has an "\n" following (its not the last in split), then it ends a block.
 				if j < len(split)-1 {
-
 					vars.o.writeBlock(&vars)
 
 				} else if vars.o.Data != "" { // If the last element in split is just "" then the last character in the rawOp is "\n".
@@ -211,7 +210,8 @@ func (o *Op) writeBlock(vars *renderVars) {
 
 	// Avoid empty paragraphs and "\n" in the output for text blocks.
 	if o.Data == "" && block.tagName == "p" && vars.tempBuf.Len() == 0 {
-		o.Data = "<br>"
+		//o.Data = "<br>"
+		block.tagName = "" //skip repeat <br>
 	}
 
 	if block.tagName != "" {
