@@ -99,6 +99,7 @@ type renderVars struct {
 	fs       formatState  // the tags currently open in the order in which they were opened
 	fms      []*Format    // reused slice for the the Formatter types defined for each Op
 	o        Op           // an Op to reuse for all iterations
+	wraped   bool
 }
 
 // addFmTer adds the format from fmTer to fms (the temporary, current Op's formats) if the format is not already set in the
@@ -210,8 +211,14 @@ func (o *Op) writeBlock(vars *renderVars) {
 
 	// Avoid empty paragraphs and "\n" in the output for text blocks.
 	if o.Data == "" && block.tagName == "p" && vars.tempBuf.Len() == 0 {
-		//o.Data = "<br>"
-		block.tagName = "" //skip repeat <br>
+		if !vars.wraped {
+			o.Data = "<br>"
+			vars.wraped = true
+		} else {
+			block.tagName = "" //skip repeat <br>
+		}
+	} else {
+		vars.wraped = false
 	}
 
 	if block.tagName != "" {
