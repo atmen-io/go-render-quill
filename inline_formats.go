@@ -78,7 +78,7 @@ func (lf *linkFormat) HasFormat(*Op) bool {
 func (lf *linkFormat) Wrap() (string, string) {
 
 	if strings.HasPrefix(lf.href, "/") {
-		return `<a href=` + strconv.Quote(lf.href) + `>`, "</a>"
+		return `<a href=` + strconv.Quote(lf.href) + ` target="_blank">`, "</a>"
 	} else {
 		return `<a href=` + strconv.Quote(lf.href) + ` target="_blank" rel="nofollow">`, "</a>"
 	}
