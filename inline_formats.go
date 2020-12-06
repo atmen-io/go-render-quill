@@ -3,6 +3,7 @@ package quill
 import (
 	"io"
 	"strconv"
+	"strings"
 )
 
 // bold
@@ -75,7 +76,12 @@ func (lf *linkFormat) HasFormat(*Op) bool {
 }
 
 func (lf *linkFormat) Wrap() (string, string) {
-	return `<a href=` + strconv.Quote(lf.href) + ` target="_blank">`, "</a>"
+
+	if strings.HasPrefix(lf.href, "/") {
+		return `<a href=` + strconv.Quote(lf.href) + `>`, "</a>"
+	} else {
+		return `<a href=` + strconv.Quote(lf.href) + ` target="_blank" rel="nofollow">`, "</a>"
+	}
 }
 
 func (lf *linkFormat) Open(_ []*Format, _ *Op) bool {
