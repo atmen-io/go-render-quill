@@ -124,7 +124,7 @@ type alignFormat struct {
 
 func (af *alignFormat) Fmt() *Format {
 	return &Format{
-		Val:   "align-" + af.val,
+		Val:   "ql-align-" + af.val,
 		Place: Class,
 		Block: true,
 	}
