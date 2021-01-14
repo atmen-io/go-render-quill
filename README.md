@@ -8,7 +8,7 @@ Complete documentation at GoDoc: [https://godoc.org/github.com/atmen-io/go-rende
 ## Usage
 
 ```
-import "github.com/dazhoudotnet/go-render-quill"
+import "github.com/atmen-io/go-render-quill"
 
 var delta = `[{"insert":"This "},{"attributes":{"italic":true},"insert":"is"},
     {"insert":" "},{"attributes":{"bold":true},"insert":"great!"},{"insert":"\n"}]`
