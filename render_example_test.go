@@ -2,8 +2,7 @@ package quill_test
 
 import (
 	"fmt"
-
-	quill "github.com/dazhoudotnet/go-render-quill"
+	"quill"
 )
 
 var ops = []byte(`

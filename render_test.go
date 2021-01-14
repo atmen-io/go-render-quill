@@ -110,7 +110,7 @@ func TestRender(t *testing.T) {
 			}
 
 			if !bytes.Equal(html, got) {
-				t.Errorf("bad rendering:\nwanted: \n%s\ngot: \n%s", html, got)
+				t.Errorf("bad rendering %s:\nwanted: \n%s\ngot: \n%s", n, html, got)
 			}
 
 		})

@@ -1,3 +1,3 @@
-module github.com/dazhoudotnet/go-render-quill
+module quill
 
 go 1.15
